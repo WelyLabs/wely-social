@@ -5,6 +5,6 @@ import org.springframework.data.neo4j.repository.ReactiveNeo4jRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface UserNodeRepository extends ReactiveNeo4jRepository<Long, UserNodeEntity> {
+public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEntity, Long> {
 
 }
