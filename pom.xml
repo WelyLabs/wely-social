@@ -28,7 +28,8 @@
 	</scm>
 	<properties>
 		<java.version>25</java.version>
-	</properties>
+        <org.mapstruct.version>1.6.3</org.mapstruct.version>
+    </properties>
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -49,6 +50,11 @@
         <dependency>
             <groupId>org.springframework.kafka</groupId>
             <artifactId>spring-kafka</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>${org.mapstruct.version}</version>
         </dependency>
 		<dependency>
 			<groupId>org.projectlombok</groupId>
@@ -88,6 +94,11 @@
 							<groupId>org.projectlombok</groupId>
 							<artifactId>lombok</artifactId>
 						</path>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${org.mapstruct.version}</version>
+                        </path>
 					</annotationProcessorPaths>
 				</configuration>
 			</plugin>
