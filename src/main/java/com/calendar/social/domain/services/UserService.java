@@ -1,7 +1,9 @@
 package com.calendar.social.domain.services;
 
 import com.calendar.social.domain.models.UserCreatedEventDTO;
+import com.calendar.social.domain.models.UserSocialDTO;
 import com.calendar.social.domain.ports.UserRepositoryPort;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public class UserService {
@@ -13,6 +15,10 @@ public class UserService {
     }
 
     public Mono<Void> writeUser(UserCreatedEventDTO userCreatedEventDTO) {
-        return userRepositoryPort.save(userCreatedEventDTO).then();
+        return userRepositoryPort.save(userCreatedEventDTO);
+    }
+
+    public Flux<UserSocialDTO> readAllWithSocialStatus(Long userId) {
+        return userRepositoryPort.findAllWithSocialStatus(userId);
     }
 }
