@@ -17,4 +17,6 @@ public interface UserRepositoryPort {
     Flux<UserNodeDTO> findOutgoingRequests(Long userId);
 
     Flux<UserNodeDTO> findIncomingRequests(Long userId);
+
+    Mono<UserNodeDTO> sendFriendRequest(Long userId, String targetName, Integer targetHashtag);
 }

@@ -14,9 +14,9 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
     @Query("MATCH (me:User {userId: $userId}) " +
             "MATCH (target:User {userName: $targetName, hashtag: $targetHashtag}) " +
             "WHERE me.userId <> target.userId " +
-            "AND NOT (me)-[:FRIENDSHIP]-(target) " + // Vérifie qu'aucune relation n'existe déjà
+            "AND NOT (me)-[:FRIENDSHIP]-(target) " +
             "MERGE (me)-[r:FRIENDSHIP {status: 'PENDING', createdAt: datetime()}]->(target) " +
-            "RETURN target")
+            "RETURN DISTINCT target")
     Mono<UserNodeEntity> sendFriendRequest(Long userId, String targetName, Integer targetHashtag);
 
     @Query("MATCH (me:User {userId: $userId})\n" +
@@ -37,16 +37,16 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
             "ORDER BY userName ASC")
     Flux<UserSocialDBDTO> findAllWithSocialStatus(Long userId);
 
-    @Query("MATCH (me:User {userId: $userId})-[:FRIENDSHIP {status: 'ACCEPTED'}]-(friend:User) " +
-            "RETURN friend")
+    @Query("MATCH (me:User {userId: $userId})-[:FRIENDSHIP {status: 'ACCEPTED'}]-(targetUser:User) " +
+            "RETURN DISTINCT targetUser")
     Flux<UserNodeEntity> findAllFriends(Long userId);
 
-    @Query("MATCH (me:User {userId: $userId})-[:FRIENDSHIP {status: 'PENDING'}]->(friend:User) " +
-            "RETURN friend")
+    @Query("MATCH (me:User {userId: $userId})-[:FRIENDSHIP {status: 'PENDING'}]->(targetUser:User) " +
+            "RETURN DISTINCT targetUser")
     Flux<UserNodeEntity> findOutgoingRequests(Long userId);
 
-    @Query("MATCH (me:User {userId: $userId})<-[:FRIENDSHIP {status: 'PENDING'}]-(friend:User) " +
-            "RETURN friend")
+    @Query("MATCH (me:User {userId: $userId})<-[:FRIENDSHIP {status: 'PENDING'}]-(targetUser:User) " +
+            "RETURN DISTINCT targetUser")
     Flux<UserNodeEntity> findIncomingRequests(Long userId);
 
 }

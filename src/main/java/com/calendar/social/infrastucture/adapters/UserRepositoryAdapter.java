@@ -40,4 +40,10 @@ public class UserRepositoryAdapter implements UserRepositoryPort {
     public Flux<UserNodeDTO> findIncomingRequests(Long userId) {
         return userNodeRepository.findIncomingRequests(userId).map(userNodeMapper::toUserNode);
     }
+
+    public Mono<UserNodeDTO> sendFriendRequest(Long userId, String targetName, Integer targetHashtag) {
+        return userNodeRepository.sendFriendRequest(userId, targetName, targetHashtag)
+                .map(userNodeMapper::toUserNode)
+                .switchIfEmpty(Mono.error(new RuntimeException("Conflit")));
+    }
 }
