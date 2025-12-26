@@ -22,6 +22,8 @@ public class UserNodeEntity {
 
     private String userName;
 
+    private Integer hashtag;
+
     private String profilePicUrl;
 
     @Relationship(type = "FRIENDSHIP", direction = Relationship.Direction.OUTGOING)

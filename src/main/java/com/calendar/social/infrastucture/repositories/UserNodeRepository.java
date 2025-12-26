@@ -6,9 +6,18 @@ import org.springframework.data.neo4j.repository.ReactiveNeo4jRepository;
 import org.springframework.data.neo4j.repository.query.Query;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @Repository
 public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEntity, Long> {
+
+    @Query("MATCH (me:User {userId: $userId}) " +
+            "MATCH (target:User {userName: $targetName, hashtag: $targetHashtag}) " +
+            "WHERE me.userId <> target.userId " +
+            "AND NOT (me)-[:FRIENDSHIP]-(target) " + // Vérifie qu'aucune relation n'existe déjà
+            "MERGE (me)-[r:FRIENDSHIP {status: 'PENDING', createdAt: datetime()}]->(target) " +
+            "RETURN target")
+    Mono<UserNodeEntity> sendFriendRequest(Long userId, String targetName, Integer targetHashtag);
 
     @Query("MATCH (me:User {userId: $userId})\n" +
             "MATCH (other:User) \n" +
@@ -39,4 +48,5 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
     @Query("MATCH (me:User {userId: $userId})<-[:FRIENDSHIP {status: 'PENDING'}]-(friend:User) " +
             "RETURN friend")
     Flux<UserNodeEntity> findIncomingRequests(Long userId);
+
 }
