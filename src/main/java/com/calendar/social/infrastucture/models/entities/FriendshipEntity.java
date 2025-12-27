@@ -20,7 +20,12 @@ public class FriendshipEntity {
     private Long id;
 
     private String status;
+
     private LocalDateTime createdAt;
+
+    private LocalDateTime acceptedAt;
+
+    private LocalDateTime rejectedAt;
 
     @TargetNode
     private UserNodeEntity targetUser;

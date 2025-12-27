@@ -21,4 +21,6 @@ public interface UserRepositoryPort {
     Mono<UserNodeDTO> sendFriendRequest(Long userId, String targetName, Integer targetHashtag);
 
     Mono<UserNodeDTO> acceptFriendRequest(Long userId, Long senderId);
+
+    Mono<UserNodeDTO> rejectFriendRequest(Long userId, Long senderId);
 }

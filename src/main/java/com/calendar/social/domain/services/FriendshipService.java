@@ -25,4 +25,8 @@ public class FriendshipService {
     public Mono<UserNodeDTO> acceptFriendRequest(Long userId, Long senderId) {
         return userRepositoryPort.acceptFriendRequest(userId, senderId);
     }
+
+    public Mono<UserNodeDTO> rejectFriendRequest(Long userId, Long senderId) {
+        return userRepositoryPort.rejectFriendRequest(userId, senderId);
+    }
 }
