@@ -1,5 +1,8 @@
 package com.calendar.social.exception;
 
+import lombok.Getter;
+
+@Getter
 public class TechnicalException extends RuntimeException {
 
     private final TechnicalErrorCode errorCode;
