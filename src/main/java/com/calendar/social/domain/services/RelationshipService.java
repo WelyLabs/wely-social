@@ -3,6 +3,8 @@ package com.calendar.social.domain.services;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.ports.RelationshipRepositoryPort;
 import com.calendar.social.domain.ports.UserRepositoryPort;
+import com.calendar.social.exception.BusinessErrorCode;
+import com.calendar.social.exception.BusinessException;
 import reactor.core.publisher.Mono;
 
 public class RelationshipService {
@@ -24,8 +26,7 @@ public class RelationshipService {
 
         return userRepositoryPort.existsByUserNameAndHashtag(userName, hashtag)
                 .filter(Boolean::booleanValue)
-                // todo : faire une erreur plus explicite
-                .switchIfEmpty(Mono.error(new RuntimeException("l'utilisateur n'existe pas")))
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.USER_DOES_NOT_EXIST)))
                 .then(userRepositoryPort.sendFriendRequest(userId, userName, hashtag));
     }
 
