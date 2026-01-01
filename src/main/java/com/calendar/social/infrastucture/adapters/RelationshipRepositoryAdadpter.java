@@ -2,6 +2,7 @@ package com.calendar.social.infrastucture.adapters;
 
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.ports.RelationshipRepositoryPort;
+import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
 import com.calendar.social.exception.TechnicalErrorCode;
 import com.calendar.social.exception.TechnicalException;
@@ -30,6 +31,6 @@ public class RelationshipRepositoryAdadpter implements RelationshipRepositoryPor
                     log.error("Erreur lors de la suppression de l'ami : {}", e.getMessage());
                     return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
                 })
-                .switchIfEmpty(Mono.error(new BusinessException()));
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.DELETE_FRIENDSHIP_FAILURE)));
     }
 }
