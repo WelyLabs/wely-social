@@ -3,6 +3,7 @@ package com.calendar.social.application.rest;
 import com.calendar.social.domain.models.UserResult;
 import com.calendar.social.domain.services.UserService;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -21,7 +22,7 @@ public class UserController {
 
     @GetMapping
     public ResponseEntity<Flux<UserResult>> readAllWithSocialStatus(
-            @NotBlank @RequestHeader("X-Internal-User-Id") Long userId,
+            @NotNull @RequestHeader("X-Internal-User-Id") Long userId,
             @RequestParam(required = false) String friendshipStatus) {
         return ResponseEntity.ok()
                 .body(userService.readAllWithSocialStatus(userId, friendshipStatus));
