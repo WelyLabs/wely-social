@@ -1,23 +1,21 @@
 package com.calendar.social.configuration;
 
 import com.calendar.social.domain.models.UserCreatedEventDTO;
-import com.calendar.social.domain.services.UserService;
-import lombok.RequiredArgsConstructor;
+import com.calendar.social.domain.services.RelationshipService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.Message;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.util.function.Consumer;
 
 @Configuration
 public class KafkaConsumerConfig {
 
-    private final UserService userService;
+    private final RelationshipService relationshipService;
 
-    public KafkaConsumerConfig(UserService userService) {
-        this.userService = userService;
+    public KafkaConsumerConfig(RelationshipService relationshipService) {
+        this.relationshipService = relationshipService;
     }
 
     @Bean
@@ -26,7 +24,7 @@ public class KafkaConsumerConfig {
                 .concatMap(message -> {
                     UserCreatedEventDTO dto = message.getPayload();
 
-                    return userService.writeUser(dto);
+                    return relationshipService.writeUser(dto);
                 })
                 .subscribe();
     }

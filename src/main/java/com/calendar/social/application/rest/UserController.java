@@ -1,8 +1,7 @@
 package com.calendar.social.application.rest;
 
 import com.calendar.social.domain.models.UserResult;
-import com.calendar.social.domain.services.UserService;
-import jakarta.validation.constraints.NotBlank;
+import com.calendar.social.domain.services.RelationshipService;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -14,10 +13,10 @@ import reactor.core.publisher.Flux;
 @Validated
 public class UserController {
 
-    private final UserService userService;
+    private final RelationshipService relationshipService;
 
-    public UserController(UserService userService) {
-        this.userService = userService;
+    public UserController(RelationshipService relationshipService) {
+        this.relationshipService = relationshipService;
     }
 
     @GetMapping
@@ -25,6 +24,6 @@ public class UserController {
             @NotNull @RequestHeader("X-Internal-User-Id") Long userId,
             @RequestParam(required = false) String friendshipStatus) {
         return ResponseEntity.ok()
-                .body(userService.readAllWithSocialStatus(userId, friendshipStatus));
+                .body(relationshipService.readAllWithSocialStatus(userId, friendshipStatus));
     }
 }

@@ -1,12 +1,13 @@
 package com.calendar.social.domain.ports;
 
+import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserSocialDTO;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public interface UserRepositoryPort {
+public interface RelationshipPort {
 
     Mono<Void> save(UserCreatedEventDTO userCreatedEventDTO);
 
@@ -25,4 +26,6 @@ public interface UserRepositoryPort {
     Mono<UserNodeDTO> rejectFriendRequest(Long userId, Long senderId);
 
     Mono<Boolean> existsByUserNameAndHashtag(String userName, Integer hashtag);
+
+    Mono<RelationshipDTO> deleteFriendship(Long userId, Long friendId);
 }
