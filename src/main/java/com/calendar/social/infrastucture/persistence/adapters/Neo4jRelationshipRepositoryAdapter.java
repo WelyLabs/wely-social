@@ -4,14 +4,13 @@ import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserSocialDTO;
-import com.calendar.social.domain.ports.RelationshipPort;
+import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
 import com.calendar.social.exception.TechnicalErrorCode;
 import com.calendar.social.exception.TechnicalException;
 import com.calendar.social.infrastucture.persistence.mappers.RelationshipMapper;
 import com.calendar.social.infrastucture.persistence.mappers.UserNodeMapper;
-import com.calendar.social.infrastucture.persistence.repositories.RelationshipRepository;
 import com.calendar.social.infrastucture.persistence.repositories.UserNodeRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -20,14 +19,14 @@ import reactor.core.publisher.Mono;
 
 @Slf4j
 @Component
-public class Neo4jRelationshipRepositoryAdapter implements RelationshipPort {
+public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepository {
 
-    private final RelationshipRepository relationshipRepository;
+    private final com.calendar.social.infrastucture.persistence.repositories.RelationshipRepository relationshipRepository;
     private final RelationshipMapper relationshipMapper;
     private final UserNodeRepository userNodeRepository;
     private final UserNodeMapper userNodeMapper;
 
-    public Neo4jRelationshipRepositoryAdapter(RelationshipRepository relationshipRepository, RelationshipMapper relationshipMapper, UserNodeRepository userNodeRepository, UserNodeMapper userNodeMapper) {
+    public Neo4jRelationshipRepositoryAdapter(com.calendar.social.infrastucture.persistence.repositories.RelationshipRepository relationshipRepository, RelationshipMapper relationshipMapper, UserNodeRepository userNodeRepository, UserNodeMapper userNodeMapper) {
         this.relationshipRepository = relationshipRepository;
         this.relationshipMapper = relationshipMapper;
         this.userNodeRepository = userNodeRepository;

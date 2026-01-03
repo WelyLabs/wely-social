@@ -7,7 +7,7 @@ import com.calendar.social.domain.models.UserSocialDTO;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public interface RelationshipPort {
+public interface RelationshipRepository {
 
     Mono<Void> save(UserCreatedEventDTO userCreatedEventDTO);
 
