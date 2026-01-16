@@ -12,5 +12,5 @@ public interface RelationshipRepository extends ReactiveNeo4jRepository<Relation
             "WITH r, r AS deletedRel " +
             "DELETE r " +
             "RETURN deletedRel")
-    Mono<RelationshipEntity> deleteFriendship(Long myId, Long otherId);
+    Mono<RelationshipEntity> deleteFriendship(String myId, Long otherId);
 }

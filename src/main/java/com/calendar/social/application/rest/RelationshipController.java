@@ -7,11 +7,14 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("relationships")
@@ -25,25 +28,34 @@ public class RelationshipController {
     }
 
     @PostMapping("request")
-    public Mono<ResponseEntity<UserNodeDTO>> sendFriendRequest(@NotNull @RequestHeader("X-Internal-User-Id") Long userId, @RequestBody @Valid FriendRequestDTO friendRequestDTO) {
+    public Mono<ResponseEntity<UserNodeDTO>> sendFriendRequest(@AuthenticationPrincipal Jwt jwt,
+                                                                   @RequestBody @Valid FriendRequestDTO friendRequestDTO) {
+        String userId = jwt.getClaimAsString("businessId");
+
         return relationshipService.sendFriendRequest(userId, friendRequestDTO.userTag())
                 .flatMap(userNodeDTO -> Mono.just(ResponseEntity.created(URI.create("relationships/request")).body(userNodeDTO)));
     }
 
     @PutMapping("accept/{senderId}")
-    public Mono<ResponseEntity<Void>> acceptFriendRequest(@NotNull @RequestHeader("X-Internal-User-Id") Long userId, @NotNull @PathVariable Long senderId) {
+    public Mono<ResponseEntity<Void>> acceptFriendRequest(@AuthenticationPrincipal Jwt jwt, @NotNull @PathVariable String senderId) {
+        String userId = jwt.getClaimAsString("businessId");
+
         return relationshipService.acceptFriendRequest(userId, senderId)
                 .thenReturn(ResponseEntity.noContent().build());
     }
 
     @PutMapping("reject/{senderId}")
-    public Mono<ResponseEntity<Void>> rejectFriendRequest(@NotNull @RequestHeader("X-Internal-User-Id") Long userId, @NotNull @PathVariable Long senderId) {
+public Mono<ResponseEntity<Void>> rejectFriendRequest(@AuthenticationPrincipal Jwt jwt, @NotNull @PathVariable String senderId) {
+        String userId = jwt.getClaimAsString("businessId");
+
         return relationshipService.rejectFriendRequest(userId, senderId)
                 .thenReturn(ResponseEntity.noContent().build());
     }
 
     @DeleteMapping("{friendId}")
-    public Mono<ResponseEntity<Void>> deleteFriendship(@NotNull @RequestHeader("X-Internal-User-Id") Long userId, @NotNull @PathVariable Long friendId) {
+    public Mono<ResponseEntity<Void>> deleteFriendship(@AuthenticationPrincipal Jwt jwt, @NotNull @PathVariable Long friendId) {
+        String userId = jwt.getClaimAsString("businessId");
+
         return relationshipService.deleteFriendship(userId, friendId)
                 .thenReturn(ResponseEntity.noContent().build());
     }

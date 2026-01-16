@@ -19,7 +19,7 @@ public class RelationshipService {
         this.relationshipRepository = relationshipRepository;
     }
 
-    public Mono<UserNodeDTO> sendFriendRequest(Long userId, String userTag) {
+    public Mono<UserNodeDTO> sendFriendRequest(String userId, String userTag) {
 
         String[] parts = userTag.split("#");
 
@@ -32,15 +32,15 @@ public class RelationshipService {
                 .then(relationshipRepository.sendFriendRequest(userId, userName, hashtag));
     }
 
-    public Mono<UserNodeDTO> acceptFriendRequest(Long userId, Long senderId) {
+    public Mono<UserNodeDTO> acceptFriendRequest(String userId, String senderId) {
         return relationshipRepository.acceptFriendRequest(userId, senderId);
     }
 
-    public Mono<UserNodeDTO> rejectFriendRequest(Long userId, Long senderId) {
+    public Mono<UserNodeDTO> rejectFriendRequest(String userId, String senderId) {
         return relationshipRepository.rejectFriendRequest(userId, senderId);
     }
 
-    public Mono<Void> deleteFriendship(Long userId, Long friendId) {
+    public Mono<Void> deleteFriendship(String userId, Long friendId) {
         return relationshipRepository.deleteFriendship(userId, friendId).then();
     }
 
@@ -48,7 +48,7 @@ public class RelationshipService {
         return relationshipRepository.save(userCreatedEventDTO);
     }
 
-    public Flux<UserResult> readAllWithSocialStatus(Long userId, String friendshipsStatus) {
+    public Flux<UserResult> readAllWithSocialStatus(String userId, String friendshipsStatus) {
 
         if (Objects.isNull(friendshipsStatus)) return relationshipRepository.findAllWithSocialStatus(userId).cast(UserResult.class);
 

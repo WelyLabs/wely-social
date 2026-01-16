@@ -42,7 +42,7 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
                 .then();
     }
 
-    public Flux<UserSocialDTO> findAllWithSocialStatus(Long userId) {
+    public Flux<UserSocialDTO> findAllWithSocialStatus(String userId) {
         return userNodeRepository.findAllWithSocialStatus(userId)
                 .map(userNodeMapper::toUserSocialDTO)
                 .onErrorMap(e -> {
@@ -51,7 +51,7 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
                 });
     }
 
-    public Flux<UserNodeDTO> findAllFriends(Long userId) {
+    public Flux<UserNodeDTO> findAllFriends(String userId) {
         return userNodeRepository.findAllFriends(userId)
                 .map(userNodeMapper::toUserNode)
                 .onErrorMap(e -> {
@@ -68,7 +68,7 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
                 });
     }
 
-    public Flux<UserNodeDTO> findOutgoingRequests(Long userId) {
+    public Flux<UserNodeDTO> findOutgoingRequests(String userId) {
         return userNodeRepository.findOutgoingRequests(userId)
                 .map(userNodeMapper::toUserNode)
                 .onErrorMap(e -> {
@@ -77,7 +77,7 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
                 });
     }
 
-    public Flux<UserNodeDTO> findIncomingRequests(Long userId) {
+    public Flux<UserNodeDTO> findIncomingRequests(String userId) {
         return userNodeRepository.findIncomingRequests(userId)
                 .map(userNodeMapper::toUserNode)
                 .onErrorMap(e -> {
@@ -86,7 +86,7 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
                 });
     }
 
-    public Mono<UserNodeDTO> sendFriendRequest(Long userId, String targetName, Integer targetHashtag) {
+    public Mono<UserNodeDTO> sendFriendRequest(String userId, String targetName, Integer targetHashtag) {
         return userNodeRepository.sendFriendRequest(userId, targetName, targetHashtag)
                 .map(userNodeMapper::toUserNode)
                 .onErrorMap(e -> {
@@ -96,7 +96,7 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
                 .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.SEND_FRIEND_REQUEST_FAILURE)));
     }
 
-    public Mono<UserNodeDTO> acceptFriendRequest(Long userId, Long senderId) {
+    public Mono<UserNodeDTO> acceptFriendRequest(String userId, String senderId) {
         return userNodeRepository.acceptFriendRequest(userId, senderId)
                 .map(userNodeMapper::toUserNode)
                 .onErrorMap(e -> {
@@ -106,7 +106,7 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
                 .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.ACCEPT_FRIEND_REQUEST_FAILURE)));
     }
 
-    public Mono<UserNodeDTO> rejectFriendRequest(Long userId, Long senderId) {
+    public Mono<UserNodeDTO> rejectFriendRequest(String userId, String senderId) {
         return userNodeRepository.rejectFriendRequest(userId, senderId)
                 .map(userNodeMapper::toUserNode)
                 .onErrorMap(e -> {
@@ -116,7 +116,7 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
                 .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.REJECT_FRIEND_REQUEST_FAILURE)));
     }
 
-    public Mono<RelationshipDTO> deleteFriendship(Long userId, Long friendId) {
+    public Mono<RelationshipDTO> deleteFriendship(String userId, Long friendId) {
         return relationshipRepository.deleteFriendship(userId, friendId)
                 .map(relationshipMapper::toRelationshipDTO)
                 .onErrorMap(e -> {

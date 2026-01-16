@@ -11,21 +11,21 @@ public interface RelationshipRepository {
 
     Mono<Void> save(UserCreatedEventDTO userCreatedEventDTO);
 
-    Flux<UserSocialDTO> findAllWithSocialStatus(Long userId);
+    Flux<UserSocialDTO> findAllWithSocialStatus(String userId);
 
-    Flux<UserNodeDTO> findAllFriends(Long userId);
+    Flux<UserNodeDTO> findAllFriends(String userId);
 
-    Flux<UserNodeDTO> findOutgoingRequests(Long userId);
+    Flux<UserNodeDTO> findOutgoingRequests(String userId);
 
-    Flux<UserNodeDTO> findIncomingRequests(Long userId);
+    Flux<UserNodeDTO> findIncomingRequests(String userId);
 
-    Mono<UserNodeDTO> sendFriendRequest(Long userId, String targetName, Integer targetHashtag);
+    Mono<UserNodeDTO> sendFriendRequest(String userId, String targetName, Integer targetHashtag);
 
-    Mono<UserNodeDTO> acceptFriendRequest(Long userId, Long senderId);
+    Mono<UserNodeDTO> acceptFriendRequest(String userId, String senderId);
 
-    Mono<UserNodeDTO> rejectFriendRequest(Long userId, Long senderId);
+    Mono<UserNodeDTO> rejectFriendRequest(String userId, String senderId);
 
     Mono<Boolean> existsByUserNameAndHashtag(String userName, Integer hashtag);
 
-    Mono<RelationshipDTO> deleteFriendship(Long userId, Long friendId);
+    Mono<RelationshipDTO> deleteFriendship(String userId, Long friendId);
 }

@@ -17,17 +17,17 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
             "AND NOT (me)-[:RELATIONSHIP]-(target) " +
             "MERGE (me)-[r:RELATIONSHIP {status: 'PENDING', createdAt: datetime()}]->(target) " +
             "RETURN DISTINCT target")
-    Mono<UserNodeEntity> sendFriendRequest(Long userId, String targetName, Integer targetHashtag);
+    Mono<UserNodeEntity> sendFriendRequest(String userId, String targetName, Integer targetHashtag);
 
     @Query("MATCH (sender:User {userId: $senderId})-[r:RELATIONSHIP {status: 'PENDING'}]->(me:User {userId: $myId}) " +
             "SET r.status = 'ACCEPTED', r.acceptedAt = datetime() " +
             "RETURN DISTINCT sender")
-    Mono<UserNodeEntity> acceptFriendRequest(Long myId, Long senderId);
+    Mono<UserNodeEntity> acceptFriendRequest(String myId, String senderId);
 
     @Query("MATCH (sender:User {userId: $senderId})-[r:RELATIONSHIP {status: 'PENDING'}]->(me:User {userId: $myId}) " +
             "SET r.status = 'REJECTED', r.rejectedAt = datetime() " +
             "RETURN DISTINCT sender")
-    Mono<UserNodeEntity> rejectFriendRequest(Long myId, Long senderId);
+    Mono<UserNodeEntity> rejectFriendRequest(String myId, String senderId);
 
     @Query("MATCH (me:User {userId: $userId})\n" +
             "MATCH (other:User) \n" +
@@ -45,19 +45,19 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
             "        ELSE 'NONE'\n" +
             "    END AS relationStatus\n" +
             "ORDER BY userName ASC")
-    Flux<UserSocialDBDTO> findAllWithSocialStatus(Long userId);
+    Flux<UserSocialDBDTO> findAllWithSocialStatus(String userId);
 
     @Query("MATCH (me:User {userId: $userId})-[:RELATIONSHIP {status: 'ACCEPTED'}]-(targetUser:User) " +
             "RETURN DISTINCT targetUser")
-    Flux<UserNodeEntity> findAllFriends(Long userId);
+    Flux<UserNodeEntity> findAllFriends(String userId);
 
     @Query("MATCH (me:User {userId: $userId})-[:RELATIONSHIP {status: 'PENDING'}]->(targetUser:User) " +
             "RETURN DISTINCT targetUser")
-    Flux<UserNodeEntity> findOutgoingRequests(Long userId);
+    Flux<UserNodeEntity> findOutgoingRequests(String userId);
 
     @Query("MATCH (me:User {userId: $userId})<-[:RELATIONSHIP {status: 'PENDING'}]-(targetUser:User) " +
             "RETURN DISTINCT targetUser")
-    Flux<UserNodeEntity> findIncomingRequests(Long userId);
+    Flux<UserNodeEntity> findIncomingRequests(String userId);
 
     Mono<Boolean> existsByUserNameAndHashtag(String userName, Integer hashtag);
 }
