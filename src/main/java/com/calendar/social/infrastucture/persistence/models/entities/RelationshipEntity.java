@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 @Setter
 public class RelationshipEntity {
     @RelationshipId
-    private Long id;
+    private String id;
 
     private String status;
 

@@ -16,9 +16,9 @@ import java.util.List;
 public class UserNodeEntity {
 
     @Id
-    private Long id;
+    private String id;
 
-    private Long userId;
+    private String userId;
 
     private String userName;
 
