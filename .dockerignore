@@ -1,0 +1,11 @@
+target/
+*.class
+*.log
+*.sh
+.idea/
+.vscode/
+*.iml
+.DS_Store
+# .mvn/  <-- Don't ignore these if we need them for build
+# mvnw
+# mvnw.cmd

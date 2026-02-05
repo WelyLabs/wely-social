@@ -45,7 +45,7 @@ public class RelationshipController {
     }
 
     @PutMapping("reject/{senderId}")
-public Mono<ResponseEntity<Void>> rejectFriendRequest(@AuthenticationPrincipal Jwt jwt, @NotNull @PathVariable String senderId) {
+    public Mono<ResponseEntity<Void>> rejectFriendRequest(@AuthenticationPrincipal Jwt jwt, @NotNull @PathVariable String senderId) {
         String userId = jwt.getClaimAsString("businessId");
 
         return relationshipService.rejectFriendRequest(userId, senderId)
