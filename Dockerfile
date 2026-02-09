@@ -17,7 +17,7 @@ FROM eclipse-temurin:25-jre-alpine
 WORKDIR /app
 
 # Copy built JAR
-COPY --from=build /app/target/*.jar app.jar
+COPY --from=build /app/target-maven/*.jar app.jar
 
 EXPOSE 8083
 

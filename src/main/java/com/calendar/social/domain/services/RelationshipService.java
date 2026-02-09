@@ -29,7 +29,7 @@ public class RelationshipService {
         return relationshipRepository.existsByUserNameAndHashtag(userName, hashtag)
                 .filter(Boolean::booleanValue)
                 .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.USER_DOES_NOT_EXIST)))
-                .then(relationshipRepository.sendFriendRequest(userId, userName, hashtag));
+                .flatMap(exists -> relationshipRepository.sendFriendRequest(userId, userName, hashtag));
     }
 
     public Mono<UserNodeDTO> acceptFriendRequest(String userId, String senderId) {
@@ -50,7 +50,8 @@ public class RelationshipService {
 
     public Flux<UserResult> readAllWithSocialStatus(String userId, String friendshipsStatus) {
 
-        if (Objects.isNull(friendshipsStatus)) return relationshipRepository.findAllWithSocialStatus(userId).cast(UserResult.class);
+        if (Objects.isNull(friendshipsStatus))
+            return relationshipRepository.findAllWithSocialStatus(userId).cast(UserResult.class);
 
         return switch (friendshipsStatus) {
             case "PENDING_INCOMING" -> relationshipRepository.findIncomingRequests(userId).cast(UserResult.class);
