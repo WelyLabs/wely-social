@@ -137,7 +137,6 @@
 						<exclude>com/calendar/social/domain/models/**</exclude>
 						<exclude>com/calendar/social/configuration/**</exclude>
 						<exclude>com/calendar/social/exception/ErrorResponse.class</exclude>
-						<exclude>com/calendar/social/infrastucture/**</exclude>
 					</excludes>
 				</configuration>
 				<executions>
