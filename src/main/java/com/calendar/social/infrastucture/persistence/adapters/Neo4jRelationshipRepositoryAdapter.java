@@ -33,10 +33,13 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
         this.userNodeMapper = userNodeMapper;
     }
 
-    public Mono<Void> save(UserCreatedEventDTO userCreatedEventDTO) {
-        return userNodeRepository.save(userNodeMapper.toUserNodeEntity(userCreatedEventDTO))
+    @Override
+    public Mono<Void> save(UserCreatedEventDTO event) {
+        return userNodeRepository.upsert(
+                        event.userId(), event.userName(), event.hashtag(), event.profilePicUrl())
                 .onErrorMap(e -> {
-                    log.error("Erreur lors de l'enregistrement de l'utilisateur : {}", e.getMessage());
+                    log.error("Error while upserting user node, userId={}: {}",
+                            event.userId(), e.getMessage());
                     return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
                 })
                 .then();
@@ -72,7 +75,7 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
         return userNodeRepository.findOutgoingRequests(userId)
                 .map(userNodeMapper::toUserNode)
                 .onErrorMap(e -> {
-                    log.error("Erreur lors de la recherche des demandes d'amis reçues : {}", e.getMessage());
+                    log.error("Error while fetching outgoing friend requests: {}", e.getMessage());
                     return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
                 });
     }
@@ -81,7 +84,7 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
         return userNodeRepository.findIncomingRequests(userId)
                 .map(userNodeMapper::toUserNode)
                 .onErrorMap(e -> {
-                    log.error("Erreur lors de la recherche des demandes d'amis envoyées : {}", e.getMessage());
+                    log.error("Error while fetching incoming friend requests: {}", e.getMessage());
                     return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
                 });
     }

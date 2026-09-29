@@ -8,7 +8,6 @@ import com.calendar.social.infrastucture.persistence.models.entities.UserNodeEnt
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
 
-import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -57,7 +56,7 @@ class UserNodeMapperTest {
 
     @Test
     void toUserNode_shouldMapSuccess() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = mapper.toUserNode(entity);
 
         assertNotNull(dto);

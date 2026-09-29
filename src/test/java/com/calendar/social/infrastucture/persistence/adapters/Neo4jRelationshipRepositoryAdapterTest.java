@@ -21,9 +21,11 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import java.util.Collections;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -47,22 +49,37 @@ class Neo4jRelationshipRepositoryAdapterTest {
     }
 
     @Test
-    void save_shouldCallRepository() {
+    void save_shouldUpsertByUserIdRatherThanInsert() {
         UserCreatedEventDTO event = new UserCreatedEventDTO("id1", "user", 1234, "avatar");
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
-        when(userNodeMapper.toUserNodeEntity(event)).thenReturn(entity);
-        when(userNodeRepository.save(entity)).thenReturn(Mono.just(entity));
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
+        when(userNodeRepository.upsert("id1", "user", 1234, "avatar")).thenReturn(Mono.just(entity));
 
         StepVerifier.create(adapter.save(event))
                 .verifyComplete();
+
+        verify(userNodeRepository).upsert("id1", "user", 1234, "avatar");
+        // save() créerait un nœud de plus à chaque rejeu de USER_CREATED.
+        verify(userNodeRepository, never()).save(any());
+    }
+
+    @Test
+    void save_shouldBeIdempotentAcrossReplays() {
+        UserCreatedEventDTO event = new UserCreatedEventDTO("id1", "user", 1234, "avatar");
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
+        when(userNodeRepository.upsert("id1", "user", 1234, "avatar")).thenReturn(Mono.just(entity));
+
+        StepVerifier.create(adapter.save(event)).verifyComplete();
+        StepVerifier.create(adapter.save(event)).verifyComplete();
+
+        verify(userNodeRepository, times(2)).upsert("id1", "user", 1234, "avatar");
+        verify(userNodeRepository, never()).save(any());
     }
 
     @Test
     void save_shouldMapError() {
         UserCreatedEventDTO event = new UserCreatedEventDTO("id1", "user", 1234, "avatar");
-        when(userNodeMapper.toUserNodeEntity(event))
-                .thenReturn(new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList()));
-        when(userNodeRepository.save(any())).thenReturn(Mono.error(new RuntimeException("DB error")));
+        when(userNodeRepository.upsert(any(), any(), any(), any()))
+                .thenReturn(Mono.error(new RuntimeException("DB error")));
 
         StepVerifier.create(adapter.save(event))
                 .expectError(TechnicalException.class)
@@ -93,7 +110,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void findAllFriends_shouldReturnMappedFlux() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
         when(userNodeRepository.findAllFriends("userId")).thenReturn(Flux.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
@@ -133,7 +150,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void findOutgoingRequests_shouldReturnMappedFlux() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
         when(userNodeRepository.findOutgoingRequests("userId")).thenReturn(Flux.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
@@ -155,7 +172,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void findIncomingRequests_shouldReturnMappedFlux() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
         when(userNodeRepository.findIncomingRequests("userId")).thenReturn(Flux.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
@@ -177,7 +194,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void sendFriendRequest_Success() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
         when(userNodeRepository.sendFriendRequest("u1", "u2", 1234)).thenReturn(Mono.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
@@ -208,7 +225,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void acceptFriendRequest_Success() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
         when(userNodeRepository.acceptFriendRequest("u1", "u2")).thenReturn(Mono.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
@@ -239,7 +256,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void rejectFriendRequest_Success() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
         when(userNodeRepository.rejectFriendRequest("u1", "u2")).thenReturn(Mono.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
