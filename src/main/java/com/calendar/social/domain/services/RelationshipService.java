@@ -3,6 +3,7 @@ package com.calendar.social.domain.services;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserResult;
+import com.calendar.social.domain.models.UserTag;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
@@ -19,17 +20,14 @@ public class RelationshipService {
         this.relationshipRepository = relationshipRepository;
     }
 
-    public Mono<UserNodeDTO> sendFriendRequest(String userId, String userTag) {
+    public Mono<UserNodeDTO> sendFriendRequest(String userId, String rawUserTag) {
+        UserTag target = UserTag.parse(rawUserTag);
 
-        String[] parts = userTag.split("#");
-
-        String userName = parts[0];
-        Integer hashtag = Integer.parseInt(parts[1]);
-
-        return relationshipRepository.existsByUserNameAndHashtag(userName, hashtag)
+        return relationshipRepository.existsByUserNameAndHashtag(target.userName(), target.hashtag())
                 .filter(Boolean::booleanValue)
                 .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.USER_DOES_NOT_EXIST)))
-                .flatMap(exists -> relationshipRepository.sendFriendRequest(userId, userName, hashtag));
+                .flatMap(exists -> relationshipRepository.sendFriendRequest(
+                        userId, target.userName(), target.hashtag()));
     }
 
     public Mono<UserNodeDTO> acceptFriendRequest(String userId, String senderId) {

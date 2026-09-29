@@ -12,7 +12,8 @@ public enum BusinessErrorCode {
     ACCEPT_FRIEND_REQUEST_FAILURE("SCL_BUS_002", "L'utilisateur n'existe pas ou aucune relation n'existe entre vous", HttpStatus.BAD_REQUEST),
     REJECT_FRIEND_REQUEST_FAILURE("SCL_BUS_003", "L'utilisateur n'existe pas ou aucune relation n'existe entre vous", HttpStatus.BAD_REQUEST),
     DELETE_FRIENDSHIP_FAILURE("SCL_BUS_004", "L'utilisateur n'existe pas ou aucune relation n'existe entre vous", HttpStatus.BAD_REQUEST),
-    USER_DOES_NOT_EXIST("SCL_BUS_005", "L'utilisateur n'existe pas", HttpStatus.NOT_FOUND),;
+    USER_DOES_NOT_EXIST("SCL_BUS_005", "L'utilisateur n'existe pas", HttpStatus.NOT_FOUND),
+    INVALID_USER_TAG("SCL_BUS_006", "Format de tag invalide. Utilisez Nom#1234", HttpStatus.BAD_REQUEST);
 
     private final String code;
     private final String message;
