@@ -1,8 +1,8 @@
-# calendar-social-api
+# wely-social
 
 Service du **graphe social** de la plateforme [Wely Calendar](https://github.com/WelyLabs/wely-platform) : demandes d'amis, amitiés, statuts relationnels.
 
-C'est le seul service à persistance orientée graphe, et le consommateur de l'événement `USER_CREATED` produit par `calendar-users-api`.
+C'est le seul service à persistance orientée graphe, et le consommateur de l'événement `USER_CREATED` produit par `wely-users`.
 
 ---
 
@@ -142,7 +142,7 @@ On n'ajoute pas un ami par UUID mais par son tag public `Pseudo#1234` — l'UUID
 { "userId": "…", "userName": "theo", "hashtag": 4271, "profilePicUrl": null }
 ```
 
-À réception, le service crée le nœud `(:User)` correspondant. C'est ce qui maintient le graphe cohérent avec PostgreSQL sans que `calendar-users-api` ait à connaître ce service.
+À réception, le service crée le nœud `(:User)` correspondant. C'est ce qui maintient le graphe cohérent avec PostgreSQL sans que `wely-users` ait à connaître ce service.
 
 ---
 
