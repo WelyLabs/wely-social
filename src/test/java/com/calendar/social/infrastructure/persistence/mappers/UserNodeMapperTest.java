@@ -1,14 +1,13 @@
-package com.calendar.social.infrastucture.persistence.mappers;
+package com.calendar.social.infrastructure.persistence.mappers;
 
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserSocialDTO;
-import com.calendar.social.infrastucture.persistence.models.dtos.UserSocialDBDTO;
-import com.calendar.social.infrastucture.persistence.models.entities.UserNodeEntity;
+import com.calendar.social.infrastructure.persistence.models.dtos.UserSocialDBDTO;
+import com.calendar.social.infrastructure.persistence.models.entities.UserNodeEntity;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
 
-import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -57,7 +56,7 @@ class UserNodeMapperTest {
 
     @Test
     void toUserNode_shouldMapSuccess() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = mapper.toUserNode(entity);
 
         assertNotNull(dto);

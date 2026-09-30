@@ -1,7 +1,7 @@
-package com.calendar.social.infrastucture.persistence.repositories;
+package com.calendar.social.infrastructure.persistence.repositories;
 
-import com.calendar.social.infrastucture.persistence.models.dtos.UserSocialDBDTO;
-import com.calendar.social.infrastucture.persistence.models.entities.UserNodeEntity;
+import com.calendar.social.infrastructure.persistence.models.dtos.UserSocialDBDTO;
+import com.calendar.social.infrastructure.persistence.models.entities.UserNodeEntity;
 import org.springframework.data.neo4j.repository.ReactiveNeo4jRepository;
 import org.springframework.data.neo4j.repository.query.Query;
 import org.springframework.stereotype.Repository;
@@ -60,4 +60,18 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
     Flux<UserNodeEntity> findIncomingRequests(String userId);
 
     Mono<Boolean> existsByUserNameAndHashtag(String userName, Integer hashtag);
+
+    /**
+     * Creates or updates the node for a user, keyed on {@code userId}.
+     *
+     * <p>Explicit MERGE rather than {@code save()}: USER_CREATED can be redelivered —
+     * Kafka is at-least-once, the consumer retries, and a consumer group can be reset —
+     * and each replay must converge on one node instead of adding another.
+     */
+    @Query("MERGE (u:User {userId: $userId}) "
+            + "SET u.userName = $userName, "
+            + "    u.hashtag = $hashtag, "
+            + "    u.profilePicUrl = $profilePicUrl "
+            + "RETURN u")
+    Mono<UserNodeEntity> upsert(String userId, String userName, Integer hashtag, String profilePicUrl);
 }

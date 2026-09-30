@@ -1,4 +1,4 @@
-package com.calendar.social.infrastucture.persistence.adapters;
+package com.calendar.social.infrastructure.persistence.adapters;
 
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
@@ -6,12 +6,13 @@ import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserSocialDTO;
 import com.calendar.social.exception.BusinessException;
 import com.calendar.social.exception.TechnicalException;
-import com.calendar.social.infrastucture.persistence.mappers.RelationshipMapper;
-import com.calendar.social.infrastucture.persistence.mappers.UserNodeMapper;
-import com.calendar.social.infrastucture.persistence.models.dtos.UserSocialDBDTO;
-import com.calendar.social.infrastucture.persistence.models.entities.RelationshipEntity;
-import com.calendar.social.infrastucture.persistence.models.entities.UserNodeEntity;
-import com.calendar.social.infrastucture.persistence.repositories.UserNodeRepository;
+import com.calendar.social.infrastructure.persistence.mappers.RelationshipMapper;
+import com.calendar.social.infrastructure.persistence.mappers.UserNodeMapper;
+import com.calendar.social.infrastructure.persistence.models.dtos.UserSocialDBDTO;
+import com.calendar.social.infrastructure.persistence.models.entities.RelationshipEntity;
+import com.calendar.social.infrastructure.persistence.models.entities.UserNodeEntity;
+import com.calendar.social.infrastructure.persistence.repositories.RelationshipNeo4jRepository;
+import com.calendar.social.infrastructure.persistence.repositories.UserNodeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,16 +22,29 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import java.util.Collections;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * The ten {@code *_shouldMapError} cases that used to live here are gone: translating an
+ * infrastructure failure into {@code TechnicalException(DATABASE_ERROR)} moved out of this
+ * class and into {@code PersistenceErrorAspect}. That is the trade-off of an aspect — the
+ * behaviour is no longer reachable from a plain unit test of the adapter, because it is
+ * the Spring proxy that carries it.
+ *
+ * <p>The coverage moved with it, to {@code PersistenceErrorAspectTest} for the logic and
+ * {@code PersistenceErrorAspectWiringTest} for proof that the pointcut actually matches
+ * these methods.
+ */
 @ExtendWith(MockitoExtension.class)
 class Neo4jRelationshipRepositoryAdapterTest {
 
     @Mock
-    private com.calendar.social.infrastucture.persistence.repositories.RelationshipRepository relationshipRepository;
+    private RelationshipNeo4jRepository relationshipRepository;
     @Mock
     private RelationshipMapper relationshipMapper;
     @Mock
@@ -47,27 +61,32 @@ class Neo4jRelationshipRepositoryAdapterTest {
     }
 
     @Test
-    void save_shouldCallRepository() {
+    void save_shouldUpsertByUserIdRatherThanInsert() {
         UserCreatedEventDTO event = new UserCreatedEventDTO("id1", "user", 1234, "avatar");
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
-        when(userNodeMapper.toUserNodeEntity(event)).thenReturn(entity);
-        when(userNodeRepository.save(entity)).thenReturn(Mono.just(entity));
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
+        when(userNodeRepository.upsert("id1", "user", 1234, "avatar")).thenReturn(Mono.just(entity));
 
         StepVerifier.create(adapter.save(event))
                 .verifyComplete();
+
+        verify(userNodeRepository).upsert("id1", "user", 1234, "avatar");
+        // save() would add another node on every replay of USER_CREATED.
+        verify(userNodeRepository, never()).save(any());
     }
 
     @Test
-    void save_shouldMapError() {
+    void save_shouldBeIdempotentAcrossReplays() {
         UserCreatedEventDTO event = new UserCreatedEventDTO("id1", "user", 1234, "avatar");
-        when(userNodeMapper.toUserNodeEntity(event))
-                .thenReturn(new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList()));
-        when(userNodeRepository.save(any())).thenReturn(Mono.error(new RuntimeException("DB error")));
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
+        when(userNodeRepository.upsert("id1", "user", 1234, "avatar")).thenReturn(Mono.just(entity));
 
-        StepVerifier.create(adapter.save(event))
-                .expectError(TechnicalException.class)
-                .verify();
+        StepVerifier.create(adapter.save(event)).verifyComplete();
+        StepVerifier.create(adapter.save(event)).verifyComplete();
+
+        verify(userNodeRepository, times(2)).upsert("id1", "user", 1234, "avatar");
+        verify(userNodeRepository, never()).save(any());
     }
+
 
     @Test
     void findAllWithSocialStatus_shouldReturnMappedFlux() {
@@ -81,19 +100,10 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void findAllWithSocialStatus_shouldMapError() {
-        when(userNodeRepository.findAllWithSocialStatus("userId"))
-                .thenReturn(Flux.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.findAllWithSocialStatus("userId"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void findAllFriends_shouldReturnMappedFlux() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
         when(userNodeRepository.findAllFriends("userId")).thenReturn(Flux.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
@@ -103,14 +113,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void findAllFriends_shouldMapError() {
-        when(userNodeRepository.findAllFriends("userId")).thenReturn(Flux.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.findAllFriends("userId"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void existsByUserNameAndHashtag_shouldReturnBoolean() {
@@ -121,19 +123,10 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void existsByUserNameAndHashtag_shouldMapError() {
-        when(userNodeRepository.existsByUserNameAndHashtag("user", 1234))
-                .thenReturn(Mono.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.existsByUserNameAndHashtag("user", 1234))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void findOutgoingRequests_shouldReturnMappedFlux() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
         when(userNodeRepository.findOutgoingRequests("userId")).thenReturn(Flux.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
@@ -143,19 +136,10 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void findOutgoingRequests_shouldMapError() {
-        when(userNodeRepository.findOutgoingRequests("userId"))
-                .thenReturn(Flux.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.findOutgoingRequests("userId"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void findIncomingRequests_shouldReturnMappedFlux() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
         when(userNodeRepository.findIncomingRequests("userId")).thenReturn(Flux.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
@@ -165,19 +149,10 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void findIncomingRequests_shouldMapError() {
-        when(userNodeRepository.findIncomingRequests("userId"))
-                .thenReturn(Flux.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.findIncomingRequests("userId"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void sendFriendRequest_Success() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
         when(userNodeRepository.sendFriendRequest("u1", "u2", 1234)).thenReturn(Mono.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
@@ -187,15 +162,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void sendFriendRequest_shouldMapError() {
-        when(userNodeRepository.sendFriendRequest("u1", "u2", 1234))
-                .thenReturn(Mono.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.sendFriendRequest("u1", "u2", 1234))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void sendFriendRequest_shouldReturnErrorOnEmpty() {
@@ -208,7 +174,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void acceptFriendRequest_Success() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
         when(userNodeRepository.acceptFriendRequest("u1", "u2")).thenReturn(Mono.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
@@ -218,15 +184,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void acceptFriendRequest_shouldMapError() {
-        when(userNodeRepository.acceptFriendRequest("u1", "u2"))
-                .thenReturn(Mono.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.acceptFriendRequest("u1", "u2"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void acceptFriendRequest_shouldReturnErrorOnEmpty() {
@@ -239,7 +196,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void rejectFriendRequest_Success() {
-        UserNodeEntity entity = new UserNodeEntity("uuid", "id1", "user", 1234, "avatar", Collections.emptyList());
+        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
         when(userNodeRepository.rejectFriendRequest("u1", "u2")).thenReturn(Mono.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
@@ -249,15 +206,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void rejectFriendRequest_shouldMapError() {
-        when(userNodeRepository.rejectFriendRequest("u1", "u2"))
-                .thenReturn(Mono.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.rejectFriendRequest("u1", "u2"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void rejectFriendRequest_shouldReturnErrorOnEmpty() {
@@ -280,15 +228,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void deleteFriendship_shouldMapError() {
-        when(relationshipRepository.deleteFriendship("u1", "u2"))
-                .thenReturn(Mono.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.deleteFriendship("u1", "u2"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void deleteFriendship_shouldReturnErrorOnEmpty() {
