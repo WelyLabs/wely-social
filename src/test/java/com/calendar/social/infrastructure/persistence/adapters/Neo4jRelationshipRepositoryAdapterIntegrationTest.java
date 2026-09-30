@@ -271,6 +271,8 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     void findAllWithSocialStatus_shouldExcludeTheCaller() {
         List<UserSocialDTO> all = adapter.findAllWithSocialStatus(ALICE).collectList().block();
 
-        assertThat(all).extracting(UserSocialDTO::userId).doesNotContain(ALICE);
+        // The other two, and only those. Asserting the absence of ALICE on its own would pass
+        // just as happily on an empty list — which is the failure this is meant to catch.
+        assertThat(all).extracting(UserSocialDTO::userId).containsExactlyInAnyOrder(BOB, CAROL);
     }
 }
