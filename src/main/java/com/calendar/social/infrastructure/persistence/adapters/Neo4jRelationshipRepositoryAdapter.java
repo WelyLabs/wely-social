@@ -9,7 +9,6 @@ import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
 import com.calendar.social.infrastructure.persistence.mappers.RelationshipMapper;
 import com.calendar.social.infrastructure.persistence.mappers.UserNodeMapper;
-import com.calendar.social.infrastructure.persistence.repositories.RelationshipNeo4jRepository;
 import com.calendar.social.infrastructure.persistence.repositories.UserNodeRepository;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -27,17 +26,14 @@ import reactor.core.publisher.Mono;
 @Component
 public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepository {
 
-    private final RelationshipNeo4jRepository relationshipRepository;
     private final RelationshipMapper relationshipMapper;
     private final UserNodeRepository userNodeRepository;
     private final UserNodeMapper userNodeMapper;
 
     public Neo4jRelationshipRepositoryAdapter(
-            RelationshipNeo4jRepository relationshipRepository,
             RelationshipMapper relationshipMapper,
             UserNodeRepository userNodeRepository,
             UserNodeMapper userNodeMapper) {
-        this.relationshipRepository = relationshipRepository;
         this.relationshipMapper = relationshipMapper;
         this.userNodeRepository = userNodeRepository;
         this.userNodeMapper = userNodeMapper;
@@ -106,7 +102,7 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
 
     @Override
     public Mono<RelationshipDTO> deleteFriendship(String userId, String friendId) {
-        return relationshipRepository
+        return userNodeRepository
                 .deleteFriendship(userId, friendId)
                 .map(relationshipMapper::toRelationshipDTO)
                 .switchIfEmpty(Mono.error(

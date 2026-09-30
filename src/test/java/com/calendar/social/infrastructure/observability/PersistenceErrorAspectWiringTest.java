@@ -6,7 +6,6 @@ import com.calendar.social.exception.TechnicalException;
 import com.calendar.social.infrastructure.persistence.adapters.Neo4jRelationshipRepositoryAdapter;
 import com.calendar.social.infrastructure.persistence.mappers.RelationshipMapper;
 import com.calendar.social.infrastructure.persistence.mappers.UserNodeMapper;
-import com.calendar.social.infrastructure.persistence.repositories.RelationshipNeo4jRepository;
 import com.calendar.social.infrastructure.persistence.repositories.UserNodeRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,7 +52,6 @@ class PersistenceErrorAspectWiringTest {
         @Bean
         RelationshipRepository relationshipRepository() {
             return new Neo4jRelationshipRepositoryAdapter(
-                    mock(RelationshipNeo4jRepository.class),
                     mock(RelationshipMapper.class),
                     userNodeRepository,
                     mock(UserNodeMapper.class));

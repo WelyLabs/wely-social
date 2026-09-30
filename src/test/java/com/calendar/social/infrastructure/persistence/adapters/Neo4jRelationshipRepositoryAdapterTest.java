@@ -11,7 +11,6 @@ import com.calendar.social.infrastructure.persistence.mappers.UserNodeMapper;
 import com.calendar.social.infrastructure.persistence.models.dtos.UserSocialDBDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.RelationshipDBDTO;
 import com.calendar.social.infrastructure.persistence.models.entities.UserNodeEntity;
-import com.calendar.social.infrastructure.persistence.repositories.RelationshipNeo4jRepository;
 import com.calendar.social.infrastructure.persistence.repositories.UserNodeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,9 +41,6 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 class Neo4jRelationshipRepositoryAdapterTest {
-
-    @Mock
-    private RelationshipNeo4jRepository relationshipRepository;
     @Mock
     private RelationshipMapper relationshipMapper;
     @Mock
@@ -56,8 +52,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @BeforeEach
     void setUp() {
-        adapter = new Neo4jRelationshipRepositoryAdapter(relationshipRepository, relationshipMapper, userNodeRepository,
-                userNodeMapper);
+        adapter = new Neo4jRelationshipRepositoryAdapter(relationshipMapper, userNodeRepository, userNodeMapper);
     }
 
     @Test
@@ -222,7 +217,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
         // cannot map a bare RETURN r onto a @RelationshipProperties class.
         RelationshipDBDTO deleted = new RelationshipDBDTO("ACCEPTED", null, null, null);
         RelationshipDTO dto = new RelationshipDTO("FRIENDS", null, null, null);
-        when(relationshipRepository.deleteFriendship("u1", "u2")).thenReturn(Mono.just(deleted));
+        when(userNodeRepository.deleteFriendship("u1", "u2")).thenReturn(Mono.just(deleted));
         when(relationshipMapper.toRelationshipDTO(deleted)).thenReturn(dto);
 
         StepVerifier.create(adapter.deleteFriendship("u1", "u2"))
@@ -233,7 +228,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void deleteFriendship_shouldReturnErrorOnEmpty() {
-        when(relationshipRepository.deleteFriendship("u1", "u2")).thenReturn(Mono.empty());
+        when(userNodeRepository.deleteFriendship("u1", "u2")).thenReturn(Mono.empty());
 
         StepVerifier.create(adapter.deleteFriendship("u1", "u2"))
                 .expectError(BusinessException.class)

@@ -1,5 +1,6 @@
 package com.calendar.social.infrastructure.persistence.repositories;
 
+import com.calendar.social.infrastructure.persistence.models.dtos.RelationshipDBDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.UserSocialDBDTO;
 import com.calendar.social.infrastructure.persistence.models.entities.UserNodeEntity;
 import org.springframework.data.neo4j.repository.ReactiveNeo4jRepository;
@@ -74,4 +75,29 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
             + "    u.profilePicUrl = $profilePicUrl "
             + "RETURN u")
     Mono<UserNodeEntity> upsert(String userId, String userName, Integer hashtag, String profilePicUrl);
+
+    /**
+     * Deletes an accepted friendship and returns what it was.
+     *
+     * <p>Declared here rather than on a repository of its own, because Spring Data Neo4j maps a
+     * DTO projection against the repository's domain type — and a repository typed on a
+     * {@code @RelationshipProperties} class is not a node repository. That mis-modelling is what
+     * made this query fail to map whatever it returned.
+     *
+     * <p>The properties are captured in the {@code WITH} before the {@code DELETE}: Cypher
+     * cannot read a relationship once it has been deleted.
+     *
+     * <p>The match is undirected, because a friendship is symmetric whichever side sent the
+     * original request.
+     */
+    @Query("MATCH (me:User {userId: $myId})-[r:RELATIONSHIP]-(other:User {userId: $otherId}) "
+            + "WHERE r.status = 'ACCEPTED' "
+            + "WITH r, "
+            + "     r.status AS status, "
+            + "     toString(r.createdAt) AS createdAt, "
+            + "     toString(r.acceptedAt) AS acceptedAt, "
+            + "     toString(r.rejectedAt) AS rejectedAt "
+            + "DELETE r "
+            + "RETURN status, createdAt, acceptedAt, rejectedAt")
+    Mono<RelationshipDBDTO> deleteFriendship(String myId, String otherId);
 }
