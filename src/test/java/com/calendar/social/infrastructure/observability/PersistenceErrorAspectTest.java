@@ -38,7 +38,7 @@ class PersistenceErrorAspectTest {
     }
 
     @Test
-    @DisplayName("une erreur d'infrastructure dans un Mono devient TechnicalException")
+    @DisplayName("an infrastructure failure inside a Mono becomes TechnicalException")
     void translateFailures_shouldMapMonoInfrastructureError() throws Throwable {
         when(joinPoint.proceed()).thenReturn(Mono.error(new RuntimeException("Bolt closed")));
 
@@ -50,7 +50,7 @@ class PersistenceErrorAspectTest {
     }
 
     @Test
-    @DisplayName("une erreur d'infrastructure dans un Flux devient TechnicalException")
+    @DisplayName("an infrastructure failure inside a Flux becomes TechnicalException")
     void translateFailures_shouldMapFluxInfrastructureError() throws Throwable {
         when(joinPoint.proceed()).thenReturn(Flux.error(new IllegalStateException("pool exhausted")));
 
@@ -60,21 +60,21 @@ class PersistenceErrorAspectTest {
     }
 
     @Test
-    @DisplayName("une erreur métier traverse sans être réécrite")
+    @DisplayName("a business error passes through unrewritten")
     void translateFailures_shouldLetBusinessFailuresThrough() throws Throwable {
         BusinessException businessFailure =
                 new BusinessException(BusinessErrorCode.SEND_FRIEND_REQUEST_FAILURE);
         when(joinPoint.proceed()).thenReturn(Mono.error(businessFailure));
 
-        // Un switchIfEmpty de l'adaptateur signifie « pas de relation », pas « la base
-        // est tombée » : le masquer en erreur technique donnerait un 500 au lieu d'un 400.
+        // A switchIfEmpty in the adapter means "no such relationship", not "the database
+        // is down": masking it as technical would answer 500 where 400 is correct.
         StepVerifier.create((Mono<?>) aspect.translateFailures(joinPoint))
                 .expectErrorMatches(error -> error == businessFailure)
                 .verify();
     }
 
     @Test
-    @DisplayName("une erreur déjà technique n'est pas enveloppée deux fois")
+    @DisplayName("an already-technical error is not wrapped twice")
     void translateFailures_shouldNotRewrapTechnicalFailures() throws Throwable {
         TechnicalException alreadyTranslated = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
         when(joinPoint.proceed()).thenReturn(Mono.error(alreadyTranslated));
@@ -85,7 +85,7 @@ class PersistenceErrorAspectTest {
     }
 
     @Test
-    @DisplayName("un flux qui réussit passe intact, sans souscription supplémentaire")
+    @DisplayName("a successful stream passes through untouched")
     void translateFailures_shouldLeaveSuccessfulResultsAlone() throws Throwable {
         when(joinPoint.proceed()).thenReturn(Flux.just("a", "b"));
 
@@ -98,7 +98,7 @@ class PersistenceErrorAspectTest {
     }
 
     @Test
-    @DisplayName("un retour non réactif est renvoyé tel quel")
+    @DisplayName("a non-reactive return is passed through unchanged")
     void translateFailures_shouldPassThroughNonReactiveReturns() throws Throwable {
         when(joinPoint.proceed()).thenReturn("plain value");
 
@@ -106,12 +106,12 @@ class PersistenceErrorAspectTest {
     }
 
     @Test
-    @DisplayName("rien n'est souscrit à l'assemblage : l'advice ne déclenche pas l'appel")
+    @DisplayName("nothing is subscribed at assembly: the advice does not trigger the call")
     void translateFailures_shouldNotSubscribeEagerly() throws Throwable {
-        // Une advice qui souscrirait pour observer l'erreur exécuterait la requête une
-        // seconde fois — le piège classique de l'AOP appliqué au réactif.
+        // An advice that subscribed in order to observe the error would run the query a
+        // second time — the classic trap of applying AOP to reactive code.
         Mono<String> lazy = Mono.fromSupplier(() -> {
-            throw new AssertionError("le publisher ne doit pas être souscrit ici");
+            throw new AssertionError("the publisher must not be subscribed here");
         });
         when(joinPoint.proceed()).thenReturn(lazy);
 

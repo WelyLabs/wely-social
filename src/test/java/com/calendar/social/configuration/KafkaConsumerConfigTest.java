@@ -55,7 +55,7 @@ class KafkaConsumerConfigTest {
     }
 
     @Test
-    @DisplayName("une écriture qui échoue est retentée avant d'être abandonnée")
+    @DisplayName("a failing write is retried before being dropped")
     void userCreated_shouldRetryBeforeGivingUp() {
         AtomicInteger attempts = new AtomicInteger();
         when(relationshipService.writeUser(any()))
@@ -66,16 +66,16 @@ class KafkaConsumerConfigTest {
 
         config.userCreated().accept(Flux.just(event("u1")));
 
-        // 1 tentative initiale + 3 retentatives bornées.
+        // One initial attempt plus three bounded retries.
         await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
                 assertThat(attempts.get()).isEqualTo(4));
     }
 
     @Test
-    @DisplayName("un message définitivement en échec ne coupe pas le flux : les suivants passent")
+    @DisplayName("a permanently failing message does not cancel the stream: the next ones get through")
     void userCreated_shouldKeepConsumingAfterAPermanentFailure() {
-        // C'était le bug : le .subscribe() nu laissait l'erreur annuler la souscription,
-        // et le service arrêtait silencieusement de consommer jusqu'au redémarrage.
+        // This was the bug: the bare .subscribe() let the error cancel the subscription,
+        // and the service silently stopped consuming until it restarted.
         when(relationshipService.writeUser(any()))
                 .thenReturn(Mono.error(new IllegalStateException("boom")))
                 .thenReturn(Mono.empty());

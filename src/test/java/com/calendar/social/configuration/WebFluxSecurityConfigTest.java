@@ -37,21 +37,21 @@ class WebFluxSecurityConfigTest {
     @BeforeEach
     void setUp() {
         config = new WebFluxSecurityConfig();
-        // Les deux @Value sont injectées par Spring en production.
+        // Both @Value fields are injected by Spring in production.
         ReflectionTestUtils.setField(config, "publicIssuer", PUBLIC_ISSUER);
         ReflectionTestUtils.setField(config, "internalJwkSetUri", INTERNAL_JWKS);
     }
 
     @Test
-    @DisplayName("le décodeur lit les clés en interne, l'issuer validé reste le public")
+    @DisplayName("the decoder reads keys internally while validating the public issuer")
     void jwtDecoder_shouldBeBuiltOnTheInternalJwks() {
         ReactiveJwtDecoder decoder = config.jwtDecoder();
 
         assertThat(decoder).isInstanceOf(NimbusReactiveJwtDecoder.class);
 
-        // Les deux URL sont distinctes par conception. Sans cette dissociation, soit la
-        // validation de l'iss échoue — l'URL interne ne correspond pas à celle inscrite
-        // dans le token —, soit le service sort du cluster à chaque rotation de clés.
+        // The two URLs are distinct by design. Without that split, either the iss
+        // validation fails — the internal URL does not match the one in the token — or the
+        // service leaves the cluster on every key rotation.
         assertThat(INTERNAL_JWKS).isNotEqualTo(PUBLIC_ISSUER);
     }
 

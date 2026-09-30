@@ -70,7 +70,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
 
         verify(userNodeRepository).upsert("id1", "user", 1234, "avatar");
-        // save() créerait un nœud de plus à chaque rejeu de USER_CREATED.
+        // save() would add another node on every replay of USER_CREATED.
         verify(userNodeRepository, never()).save(any());
     }
 

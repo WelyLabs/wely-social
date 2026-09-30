@@ -24,7 +24,7 @@ class SocialApplicationTest {
 
     @Test
     void applicationClassShouldExposeOnlyAnEntryPoint() {
-        // Les méthodes synthétiques sont écartées : l'instrumentation JaCoCo en ajoute.
+        // Synthetic methods are filtered out: JaCoCo instrumentation adds them.
         assertThat(SocialApplication.class.getDeclaredMethods())
                 .filteredOn(method -> !method.isSynthetic())
                 .extracting(Method::getName)

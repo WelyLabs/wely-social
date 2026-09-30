@@ -15,14 +15,14 @@ class Neo4jConfigTest {
     private final Neo4jConfig config = new Neo4jConfig();
 
     @Test
-    @DisplayName("le gestionnaire de transactions est la variante réactive, pas la bloquante")
+    @DisplayName("the transaction manager is the reactive variant, not the blocking one")
     void reactiveTransactionManager_shouldBeTheReactiveNeo4jManager() {
         Driver driver = mock(Driver.class);
 
         ReactiveTransactionManager manager = config.reactiveTransactionManager(driver);
 
-        // Le manager impératif fonctionnerait à la compilation mais bloquerait
-        // l'event loop : c'est précisément le piège que ce bean évite.
+        // The imperative manager would compile just as well and block the event loop,
+        // which is precisely the trap this bean exists to avoid.
         assertThat(manager).isInstanceOf(ReactiveNeo4jTransactionManager.class);
     }
 
@@ -32,7 +32,7 @@ class Neo4jConfigTest {
 
         config.reactiveTransactionManager(driver);
 
-        // Aucune connexion à l'assemblage : le driver n'est sollicité qu'à l'usage.
+        // Nothing connects at assembly: the driver is only used when queried.
         verifyNoInteractions(driver);
     }
 }

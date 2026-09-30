@@ -29,11 +29,11 @@ class UserTagTest {
     }
 
     @Test
-    @DisplayName("un nom contenant # ne passe plus : c'était le contournement de l'ancienne regex")
+    @DisplayName("a name containing # no longer passes: that was the old pattern's bypass")
     void parse_shouldRejectExtraSeparator() {
-        // L'ancienne regex ^.+#\d{4,6}$ acceptait cette valeur — le .+ étant gourmand,
-        // il absorbait le premier #. Le split("#") renvoyait alors ["a", "b", "1234"] et
-        // Integer.parseInt("b") levait une NumberFormatException remontée en 500.
+        // The old pattern ^.+#\d{4,6}$ accepted this value: .+ is greedy and swallowed
+        // the first #, so split("#") returned ["a", "b", "1234"] and
+        // Integer.parseInt("b") threw a NumberFormatException, surfacing as a 500.
         assertThatThrownBy(() -> UserTag.parse("a#b#1234"))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
@@ -43,15 +43,15 @@ class UserTagTest {
     @ParameterizedTest
     @NullSource
     @ValueSource(strings = {
-            "",           // vide
-            "theo",       // pas de séparateur
-            "theo#",      // pas de hashtag
-            "theo#xx",    // hashtag non numérique
-            "theo#123",   // trop court
-            "theo#12345", // trop long
-            "#4271",      // pas de nom
-            "ab#4271",    // nom trop court
-            "a#b#1234",   // séparateur en trop
+            "",           // empty
+            "theo",       // no separator
+            "theo#",      // no hashtag
+            "theo#xx",    // non-numeric hashtag
+            "theo#123",   // too short
+            "theo#12345", // too long
+            "#4271",      // no name
+            "ab#4271",    // name too short
+            "a#b#1234",   // extra separator
     })
     void parse_shouldRejectMalformedInput(String raw) {
         assertThatThrownBy(() -> UserTag.parse(raw))
@@ -61,20 +61,20 @@ class UserTagTest {
     }
 
     @Test
-    @DisplayName("la regex exposée au DTO accepte exactement ce que parse accepte")
+    @DisplayName("the pattern exposed to the DTO accepts exactly what parse accepts")
     void pattern_shouldAgreeWithParse() {
         Pattern dtoPattern = Pattern.compile(UserTag.PATTERN);
 
         for (String valid : new String[] {"theo#4271", "jean-luc#0001", "Ana Maria#9999"}) {
             assertThat(dtoPattern.matcher(valid).matches())
-                    .as("la regex du DTO devrait accepter %s", valid)
+                    .as("the DTO pattern should accept %s", valid)
                     .isTrue();
             assertThat(UserTag.parse(valid)).isNotNull();
         }
 
         for (String invalid : new String[] {"theo", "theo#xx", "a#b#1234", "theo#12345"}) {
             assertThat(dtoPattern.matcher(invalid).matches())
-                    .as("la regex du DTO devrait rejeter %s", invalid)
+                    .as("the DTO pattern should reject %s", invalid)
                     .isFalse();
         }
     }

@@ -64,15 +64,15 @@ class PersistenceErrorAspectWiringTest {
     private RelationshipRepository adapter;
 
     @Test
-    @DisplayName("l'adaptateur est bien proxifié par l'aspect")
+    @DisplayName("the adapter is actually advised by the aspect")
     void adapter_shouldBeAdvised() {
         assertThat(AopUtils.isAopProxy(adapter))
-                .as("l'adaptateur devrait être un proxy AOP")
+                .as("the adapter should be an AOP proxy")
                 .isTrue();
     }
 
     @Test
-    @DisplayName("à travers le proxy, une erreur Neo4j ressort en TechnicalException")
+    @DisplayName("a Neo4j failure surfaces as TechnicalException through the proxy")
     void adapter_shouldTranslateThroughTheProxy() {
         when(TestConfig.userNodeRepository.findAllFriends(anyString()))
                 .thenReturn(Flux.error(new RuntimeException("Bolt connection reset")));
@@ -85,7 +85,7 @@ class PersistenceErrorAspectWiringTest {
     }
 
     @Test
-    @DisplayName("le pointcut couvre toutes les méthodes publiques, pas seulement la première")
+    @DisplayName("the pointcut covers every public method, not just the first")
     void adapter_shouldTranslateEveryMethod() {
         when(TestConfig.userNodeRepository.findAllWithSocialStatus(anyString()))
                 .thenReturn(Flux.error(new RuntimeException("Bolt connection reset")));
