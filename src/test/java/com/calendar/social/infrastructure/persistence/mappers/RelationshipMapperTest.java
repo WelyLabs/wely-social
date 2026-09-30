@@ -1,6 +1,7 @@
 package com.calendar.social.infrastructure.persistence.mappers;
 
 import com.calendar.social.domain.models.RelationshipDTO;
+import com.calendar.social.infrastructure.persistence.models.dtos.RelationshipDBDTO;
 import com.calendar.social.infrastructure.persistence.models.entities.RelationshipEntity;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
@@ -43,6 +44,22 @@ class RelationshipMapperTest {
 
     @Test
     void toRelationshipDTO_nullSource_shouldReturnNull() {
-        assertNull(mapper.toRelationshipDTO(null));
+        // Both overloads, named explicitly: the mapper now also maps the column projection the
+        // delete query returns, so a bare null no longer picks one on its own.
+        assertNull(mapper.toRelationshipDTO((RelationshipEntity) null));
+        assertNull(mapper.toRelationshipDTO((RelationshipDBDTO) null));
+    }
+
+    @Test
+    void toRelationshipDTO_shouldMapTheDeleteProjection() {
+        RelationshipDBDTO deleted =
+                new RelationshipDBDTO("ACCEPTED", "2025-06-01T10:00:00", "2025-06-02T10:00:00", null);
+
+        RelationshipDTO dto = mapper.toRelationshipDTO(deleted);
+
+        assertEquals("ACCEPTED", dto.status());
+        assertEquals("2025-06-01T10:00:00", dto.createdAt());
+        assertEquals("2025-06-02T10:00:00", dto.acceptedAt());
+        assertNull(dto.rejectedAt());
     }
 }

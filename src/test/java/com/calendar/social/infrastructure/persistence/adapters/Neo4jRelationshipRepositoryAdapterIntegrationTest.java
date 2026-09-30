@@ -1,6 +1,7 @@
 package com.calendar.social.infrastructure.persistence.adapters;
 
 import com.calendar.social.domain.models.UserCreatedEventDTO;
+import com.calendar.social.exception.BusinessException;
 import com.calendar.social.domain.models.UserSocialDTO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -138,7 +139,9 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     void acceptFriendRequest_shouldIgnoreTheSenderAcceptingTheirOwnRequest() {
         adapter.sendFriendRequest(ALICE, "bob", 2222).block();
 
-        StepVerifier.create(adapter.acceptFriendRequest(ALICE, BOB)).verifyComplete();
+        StepVerifier.create(adapter.acceptFriendRequest(ALICE, BOB))
+                .expectError(BusinessException.class)
+                .verify();
 
         assertThat(statusBetween(ALICE, BOB)).isEqualTo("SENT_BY_ME");
     }
@@ -158,7 +161,9 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     void sendFriendRequest_shouldRefuseADuplicate() {
         adapter.sendFriendRequest(ALICE, "bob", 2222).block();
 
-        StepVerifier.create(adapter.sendFriendRequest(ALICE, "bob", 2222)).verifyComplete();
+        StepVerifier.create(adapter.sendFriendRequest(ALICE, "bob", 2222))
+                .expectError(BusinessException.class)
+                .verify();
 
         Long relationships = neo4jClient
                 .query("MATCH (:User {userId: $a})-[r:RELATIONSHIP]-(:User {userId: $b}) RETURN count(r) AS c")
@@ -175,7 +180,9 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         // request with another request would leave two edges and an undefined status.
         adapter.sendFriendRequest(ALICE, "bob", 2222).block();
 
-        StepVerifier.create(adapter.sendFriendRequest(BOB, "alice", 1111)).verifyComplete();
+        StepVerifier.create(adapter.sendFriendRequest(BOB, "alice", 1111))
+                .expectError(BusinessException.class)
+                .verify();
 
         assertThat(statusBetween(ALICE, BOB)).isEqualTo("SENT_BY_ME");
     }
@@ -183,7 +190,9 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @Test
     @DisplayName("a user cannot befriend themselves")
     void sendFriendRequest_shouldRefuseSelf() {
-        StepVerifier.create(adapter.sendFriendRequest(ALICE, "alice", 1111)).verifyComplete();
+        StepVerifier.create(adapter.sendFriendRequest(ALICE, "alice", 1111))
+                .expectError(BusinessException.class)
+                .verify();
     }
 
     @Test
@@ -207,14 +216,39 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     }
 
     @Test
-    @DisplayName("removing a friend takes the relationship with it")
+    @DisplayName("removing a friend takes the relationship with it, and says what it removed")
     void deleteFriendship_shouldRemoveTheEdge() {
+        // This is the case that found the bug. The query returned the relationship object, which
+        // Spring Data Neo4j cannot map onto a @RelationshipProperties class — so the DELETE ran
+        // server-side and the caller still got a TechnicalException. Removing a friend worked and
+        // answered 500 at the same time, and no mocked test could see it.
         adapter.sendFriendRequest(ALICE, "bob", 2222).block();
         adapter.acceptFriendRequest(BOB, ALICE).block();
 
-        adapter.deleteFriendship(ALICE, BOB).block();
+        StepVerifier.create(adapter.deleteFriendship(ALICE, BOB))
+                .assertNext(deleted -> assertThat(deleted.status()).isEqualTo("ACCEPTED"))
+                .verifyComplete();
 
         assertThat(statusBetween(ALICE, BOB)).isEqualTo("NONE");
+    }
+
+    @Test
+    @DisplayName("removing works whichever side originally sent the request")
+    void deleteFriendship_shouldBeSymmetric() {
+        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.acceptFriendRequest(BOB, ALICE).block();
+
+        StepVerifier.create(adapter.deleteFriendship(BOB, ALICE)).expectNextCount(1).verifyComplete();
+
+        assertThat(statusBetween(ALICE, BOB)).isEqualTo("NONE");
+    }
+
+    @Test
+    @DisplayName("removing someone who is not a friend is refused")
+    void deleteFriendship_shouldRefuseANonFriend() {
+        StepVerifier.create(adapter.deleteFriendship(ALICE, CAROL))
+                .expectError(BusinessException.class)
+                .verify();
     }
 
     @Test

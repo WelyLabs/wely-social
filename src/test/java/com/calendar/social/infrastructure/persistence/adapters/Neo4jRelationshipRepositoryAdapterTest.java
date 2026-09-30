@@ -9,7 +9,7 @@ import com.calendar.social.exception.TechnicalException;
 import com.calendar.social.infrastructure.persistence.mappers.RelationshipMapper;
 import com.calendar.social.infrastructure.persistence.mappers.UserNodeMapper;
 import com.calendar.social.infrastructure.persistence.models.dtos.UserSocialDBDTO;
-import com.calendar.social.infrastructure.persistence.models.entities.RelationshipEntity;
+import com.calendar.social.infrastructure.persistence.models.dtos.RelationshipDBDTO;
 import com.calendar.social.infrastructure.persistence.models.entities.UserNodeEntity;
 import com.calendar.social.infrastructure.persistence.repositories.RelationshipNeo4jRepository;
 import com.calendar.social.infrastructure.persistence.repositories.UserNodeRepository;
@@ -218,10 +218,12 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void deleteFriendship_Success() {
-        RelationshipEntity entity = new RelationshipEntity();
+        // The query returns a column projection, not a relationship object: Spring Data Neo4j
+        // cannot map a bare RETURN r onto a @RelationshipProperties class.
+        RelationshipDBDTO deleted = new RelationshipDBDTO("ACCEPTED", null, null, null);
         RelationshipDTO dto = new RelationshipDTO("FRIENDS", null, null, null);
-        when(relationshipRepository.deleteFriendship("u1", "u2")).thenReturn(Mono.just(entity));
-        when(relationshipMapper.toRelationshipDTO(entity)).thenReturn(dto);
+        when(relationshipRepository.deleteFriendship("u1", "u2")).thenReturn(Mono.just(deleted));
+        when(relationshipMapper.toRelationshipDTO(deleted)).thenReturn(dto);
 
         StepVerifier.create(adapter.deleteFriendship("u1", "u2"))
                 .expectNext(dto)
