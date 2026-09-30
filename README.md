@@ -207,5 +207,4 @@ kubectl apply -k overlays/local --server-side
 - **La liste d'utilisateurs n'est pas paginée.** `MATCH (other:User)` parcourt tous les nœuds, sans `SKIP`/`LIMIT` ni filtre serveur — le filtrage est fait côté client. À remplacer par une recherche paramétrée, paginée et indexée sur `(userName, hashtag)`.
 - **Le consumer Kafka souscrit lui-même au flux.** Le `.subscribe()` dans `KafkaConsumerConfig` retire au framework la gestion de l'acquittement : un échec d'écriture Neo4j perd l'événement sans trace. À remplacer par un retour du flux au framework.
 - **Le champ `friendships` de `UserNodeEntity` est toujours vide** : il est mappé sur le type `FRIENDSHIP` alors que toutes les requêtes utilisent `RELATIONSHIP`.
-- **Le package s'appelle `infrastucture`** (faute de frappe), renommage en cours.
 - **Pas de tests d'intégration** : les requêtes Cypher ne sont jamais exécutées contre un vrai Neo4j.
