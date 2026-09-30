@@ -41,9 +41,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 @EnabledIf("containersRequested")
 class Neo4jRelationshipRepositoryAdapterIntegrationTest {
 
+    /**
+     * The password matches the one in {@code application-test.properties}. Running the container
+     * {@code withoutAuthentication()} while the profile still supplied credentials left the two
+     * disagreeing, and the class took twenty-three minutes in CI rather than one.
+     */
     @Container
     @ServiceConnection
-    static final Neo4jContainer<?> NEO4J = new Neo4jContainer<>("neo4j:5.26").withoutAuthentication();
+    static final Neo4jContainer<?> NEO4J = new Neo4jContainer<>("neo4j:5.26")
+            .withAdminPassword("test-password");
 
     static boolean containersRequested() {
         return System.getenv("CI") != null || Boolean.getBoolean("integration.tests");
