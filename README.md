@@ -128,6 +128,23 @@ Préfixées par `/social-service`, exposées sur `/api/v1/social-service/**`. To
 
 L'identifiant de l'appelant n'est **jamais** accepté en paramètre : il provient systématiquement du token. Les requêtes Cypher sont ancrées sur `(me:User {userId: $userId})`, ce qui rend structurellement impossible d'agir sur la relation d'un tiers.
 
+### OpenAPI
+
+La spécification est générée par `springdoc-openapi` et servie sans jeton :
+
+| | |
+|---|---|
+| Spec JSON | `http://localhost:8083/v3/api-docs` |
+| Swagger UI | `http://localhost:8083/swagger-ui.html` |
+
+Ces deux chemins ne sont **pas** routés par la gateway, et le Service est en `ClusterIP` : rien
+hors du cluster ne peut les atteindre. La documentation reste donc active en permanence — c'est
+la topologie réseau qui la protège, pas un drapeau.
+
+> Le préfixe de chemin du service est appliqué par package (`…application.rest`) et non par
+> annotation. Sélectionner sur `@RestController` attrapait aussi le contrôleur de springdoc, ce
+> qui déplaçait la spec en `/social-service/v3/api-docs` derrière l'authentification.
+
 ### Ajout par tag
 
 On n'ajoute pas un ami par UUID mais par son tag public `Pseudo#1234` — l'UUID métier n'a pas à circuler dans l'interface. Le service vérifie l'existence du couple `(userName, hashtag)` avant de créer l'arête.
@@ -150,15 +167,45 @@ On n'ajoute pas un ami par UUID mais par son tag public `Pseudo#1234` — l'UUID
 
 | Code | HTTP | Signification |
 |---|---|---|
-| `SCL_BUS_001` | 400 | Échec d'envoi — utilisateur inexistant ou relation déjà présente |
-| `SCL_BUS_002` | 400 | Échec d'acceptation — aucune demande en attente |
-| `SCL_BUS_003` | 400 | Échec de rejet — aucune demande en attente |
-| `SCL_BUS_004` | 400 | Échec de suppression — aucune amitié |
-| `SCL_BUS_005` | 404 | Utilisateur inexistant |
-| `SCL_TEC_001` | 500 | Neo4j injoignable |
+| `SCL-BUS-001` | 400 | Demande refusée — utilisateur inexistant ou relation déjà présente |
+| `SCL-BUS-002` | 400 | Rien à accepter — aucune demande en attente |
+| `SCL-BUS-003` | 400 | Rien à rejeter — aucune demande en attente |
+| `SCL-BUS-004` | 400 | Aucune amitié à supprimer |
+| `SCL-BUS-005` | 404 | Utilisateur inexistant |
+| `SCL-BUS-006` | 400 | Handle malformé — le format est `Nom#1234` |
+| `SCL-VAL-001` | 400 | Validation du corps de requête, détail par champ |
+| `SCL-REQ-000` | *repris* | Chemin inconnu, méthode non autorisée |
+| `SCL-TEC-001` | 502 | Neo4j injoignable |
 
-Les requêtes Cypher renvoient un flux vide quand aucune arête ne correspond ; l'adaptateur transforme ce vide en erreur métier via `switchIfEmpty`.
+**502 et non 500** pour l'indisponibilité du graphe : la requête était valide, c'est le magasin
+qui est tombé.
 
+Les requêtes Cypher renvoient un flux vide quand aucune arête ne correspond ; l'adaptateur
+transforme ce vide en erreur métier via `switchIfEmpty`.
+
+> `switchIfEmpty(Mono.error(…))` évalue son argument **à l'assemblage**, pas à la souscription.
+> Construire l'exception directement dedans la crée à chaque appel, y compris quand tout va
+> bien : d'où le `Mono.defer(…)` systématique dans les adaptateurs.
+
+Toutes les réponses d'erreur sont des `ProblemDetail` (RFC 7807), avec un `code` stable qu'un
+client peut tester et un `timestamp` :
+
+```json
+{
+  "type": "https://welylabs.app/problems/scl-bus-005",
+  "title": "User not found",
+  "status": 404,
+  "detail": "No user matches the given handle.",
+  "instance": "/social-service/users/Alice%231234",
+  "code": "SCL-BUS-005",
+  "timestamp": "2026-09-30T19:23:43.598673Z"
+}
+```
+
+> `SCL-REQ-000` rend le statut d'origine d'une `ResponseStatusException` — 404 sur un
+> chemin inconnu, 405 sur une méthode non autorisée. Sans lui, le handler `Exception.class`
+> les avalait toutes et **tout chemin inconnu répondait 500**. C'est le genre de défaut qu'un
+> test de route nominale ne voit jamais.
 ---
 
 ## Configuration
