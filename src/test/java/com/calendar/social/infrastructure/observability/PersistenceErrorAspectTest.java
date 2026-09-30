@@ -1,4 +1,4 @@
-package com.calendar.social.infrastucture.observability;
+package com.calendar.social.infrastructure.observability;
 
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;

@@ -1,4 +1,4 @@
-package com.calendar.social.infrastucture.persistence.adapters;
+package com.calendar.social.infrastructure.persistence.adapters;
 
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
@@ -7,9 +7,10 @@ import com.calendar.social.domain.models.UserSocialDTO;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
-import com.calendar.social.infrastucture.persistence.mappers.RelationshipMapper;
-import com.calendar.social.infrastucture.persistence.mappers.UserNodeMapper;
-import com.calendar.social.infrastucture.persistence.repositories.UserNodeRepository;
+import com.calendar.social.infrastructure.persistence.mappers.RelationshipMapper;
+import com.calendar.social.infrastructure.persistence.mappers.UserNodeMapper;
+import com.calendar.social.infrastructure.persistence.repositories.RelationshipNeo4jRepository;
+import com.calendar.social.infrastructure.persistence.repositories.UserNodeRepository;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -19,22 +20,20 @@ import reactor.core.publisher.Mono;
  *
  * <p>No error handling here. Logging a failure and translating it into
  * {@code TechnicalException(DATABASE_ERROR)} used to be repeated in all ten methods; that
- * now lives in {@link com.calendar.social.infrastucture.observability.PersistenceErrorAspect},
+ * now lives in {@link com.calendar.social.infrastructure.observability.PersistenceErrorAspect},
  * which wraps each returned publisher. What stays in this class is what actually differs
  * per method: which business failure an empty result stands for.
  */
 @Component
 public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepository {
 
-    private final com.calendar.social.infrastucture.persistence.repositories.RelationshipRepository
-            relationshipRepository;
+    private final RelationshipNeo4jRepository relationshipRepository;
     private final RelationshipMapper relationshipMapper;
     private final UserNodeRepository userNodeRepository;
     private final UserNodeMapper userNodeMapper;
 
     public Neo4jRelationshipRepositoryAdapter(
-            com.calendar.social.infrastucture.persistence.repositories.RelationshipRepository
-                    relationshipRepository,
+            RelationshipNeo4jRepository relationshipRepository,
             RelationshipMapper relationshipMapper,
             UserNodeRepository userNodeRepository,
             UserNodeMapper userNodeMapper) {

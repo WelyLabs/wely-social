@@ -1,12 +1,13 @@
-package com.calendar.social.infrastucture.observability;
+package com.calendar.social.infrastructure.observability;
 
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.TechnicalErrorCode;
 import com.calendar.social.exception.TechnicalException;
-import com.calendar.social.infrastucture.persistence.adapters.Neo4jRelationshipRepositoryAdapter;
-import com.calendar.social.infrastucture.persistence.mappers.RelationshipMapper;
-import com.calendar.social.infrastucture.persistence.mappers.UserNodeMapper;
-import com.calendar.social.infrastucture.persistence.repositories.UserNodeRepository;
+import com.calendar.social.infrastructure.persistence.adapters.Neo4jRelationshipRepositoryAdapter;
+import com.calendar.social.infrastructure.persistence.mappers.RelationshipMapper;
+import com.calendar.social.infrastructure.persistence.mappers.UserNodeMapper;
+import com.calendar.social.infrastructure.persistence.repositories.RelationshipNeo4jRepository;
+import com.calendar.social.infrastructure.persistence.repositories.UserNodeRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.support.AopUtils;
@@ -52,7 +53,7 @@ class PersistenceErrorAspectWiringTest {
         @Bean
         RelationshipRepository relationshipRepository() {
             return new Neo4jRelationshipRepositoryAdapter(
-                    mock(com.calendar.social.infrastucture.persistence.repositories.RelationshipRepository.class),
+                    mock(RelationshipNeo4jRepository.class),
                     mock(RelationshipMapper.class),
                     userNodeRepository,
                     mock(UserNodeMapper.class));

@@ -1,7 +1,7 @@
-package com.calendar.social.infrastucture.persistence.mappers;
+package com.calendar.social.infrastructure.persistence.mappers;
 
 import com.calendar.social.domain.models.RelationshipDTO;
-import com.calendar.social.infrastucture.persistence.models.entities.RelationshipEntity;
+import com.calendar.social.infrastructure.persistence.models.entities.RelationshipEntity;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
 

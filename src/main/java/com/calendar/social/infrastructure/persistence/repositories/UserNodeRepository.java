@@ -1,7 +1,7 @@
-package com.calendar.social.infrastucture.persistence.repositories;
+package com.calendar.social.infrastructure.persistence.repositories;
 
-import com.calendar.social.infrastucture.persistence.models.dtos.UserSocialDBDTO;
-import com.calendar.social.infrastucture.persistence.models.entities.UserNodeEntity;
+import com.calendar.social.infrastructure.persistence.models.dtos.UserSocialDBDTO;
+import com.calendar.social.infrastructure.persistence.models.entities.UserNodeEntity;
 import org.springframework.data.neo4j.repository.ReactiveNeo4jRepository;
 import org.springframework.data.neo4j.repository.query.Query;
 import org.springframework.stereotype.Repository;

@@ -1,4 +1,4 @@
-package com.calendar.social.infrastucture.persistence.adapters;
+package com.calendar.social.infrastructure.persistence.adapters;
 
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
@@ -6,12 +6,13 @@ import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserSocialDTO;
 import com.calendar.social.exception.BusinessException;
 import com.calendar.social.exception.TechnicalException;
-import com.calendar.social.infrastucture.persistence.mappers.RelationshipMapper;
-import com.calendar.social.infrastucture.persistence.mappers.UserNodeMapper;
-import com.calendar.social.infrastucture.persistence.models.dtos.UserSocialDBDTO;
-import com.calendar.social.infrastucture.persistence.models.entities.RelationshipEntity;
-import com.calendar.social.infrastucture.persistence.models.entities.UserNodeEntity;
-import com.calendar.social.infrastucture.persistence.repositories.UserNodeRepository;
+import com.calendar.social.infrastructure.persistence.mappers.RelationshipMapper;
+import com.calendar.social.infrastructure.persistence.mappers.UserNodeMapper;
+import com.calendar.social.infrastructure.persistence.models.dtos.UserSocialDBDTO;
+import com.calendar.social.infrastructure.persistence.models.entities.RelationshipEntity;
+import com.calendar.social.infrastructure.persistence.models.entities.UserNodeEntity;
+import com.calendar.social.infrastructure.persistence.repositories.RelationshipNeo4jRepository;
+import com.calendar.social.infrastructure.persistence.repositories.UserNodeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,7 +29,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 /**
  * The ten {@code *_shouldMapError} cases that used to live here are gone: translating an
  * infrastructure failure into {@code TechnicalException(DATABASE_ERROR)} moved out of this
@@ -40,10 +40,11 @@ import static org.mockito.Mockito.when;
  * {@code PersistenceErrorAspectWiringTest} for proof that the pointcut actually matches
  * these methods.
  */
+@ExtendWith(MockitoExtension.class)
 class Neo4jRelationshipRepositoryAdapterTest {
 
     @Mock
-    private com.calendar.social.infrastucture.persistence.repositories.RelationshipRepository relationshipRepository;
+    private RelationshipNeo4jRepository relationshipRepository;
     @Mock
     private RelationshipMapper relationshipMapper;
     @Mock

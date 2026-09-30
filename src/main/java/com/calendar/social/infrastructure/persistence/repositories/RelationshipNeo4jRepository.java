@@ -1,11 +1,11 @@
-package com.calendar.social.infrastucture.persistence.repositories;
+package com.calendar.social.infrastructure.persistence.repositories;
 
-import com.calendar.social.infrastucture.persistence.models.entities.RelationshipEntity;
+import com.calendar.social.infrastructure.persistence.models.entities.RelationshipEntity;
 import org.springframework.data.neo4j.repository.ReactiveNeo4jRepository;
 import org.springframework.data.neo4j.repository.query.Query;
 import reactor.core.publisher.Mono;
 
-public interface RelationshipRepository extends ReactiveNeo4jRepository<RelationshipEntity, String> {
+public interface RelationshipNeo4jRepository extends ReactiveNeo4jRepository<RelationshipEntity, String> {
 
     @Query("MATCH (me:User {userId: $myId})-[r:RELATIONSHIP]-(other:User {userId: $otherId}) " +
             "WHERE r.status = 'ACCEPTED' " +

@@ -1,4 +1,4 @@
-package com.calendar.social.infrastucture.observability;
+package com.calendar.social.infrastructure.observability;
 
 import com.calendar.social.exception.BusinessException;
 import com.calendar.social.exception.TechnicalErrorCode;
@@ -43,7 +43,7 @@ import reactor.core.publisher.Mono;
 public class PersistenceErrorAspect {
 
     /** Every public method of every persistence adapter in this service. */
-    @Pointcut("execution(public * com.calendar.social.infrastucture.persistence.adapters.*.*(..))")
+    @Pointcut("execution(public * com.calendar.social.infrastructure.persistence.adapters.*.*(..))")
     public void persistenceAdapterMethod() {
         // Pointcut declaration only.
     }
