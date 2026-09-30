@@ -7,26 +7,37 @@ import com.calendar.social.domain.models.UserSocialDTO;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
-import com.calendar.social.exception.TechnicalErrorCode;
-import com.calendar.social.exception.TechnicalException;
 import com.calendar.social.infrastucture.persistence.mappers.RelationshipMapper;
 import com.calendar.social.infrastucture.persistence.mappers.UserNodeMapper;
 import com.calendar.social.infrastucture.persistence.repositories.UserNodeRepository;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-@Slf4j
+/**
+ * Drives the social graph through explicit Cypher.
+ *
+ * <p>No error handling here. Logging a failure and translating it into
+ * {@code TechnicalException(DATABASE_ERROR)} used to be repeated in all ten methods; that
+ * now lives in {@link com.calendar.social.infrastucture.observability.PersistenceErrorAspect},
+ * which wraps each returned publisher. What stays in this class is what actually differs
+ * per method: which business failure an empty result stands for.
+ */
 @Component
 public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepository {
 
-    private final com.calendar.social.infrastucture.persistence.repositories.RelationshipRepository relationshipRepository;
+    private final com.calendar.social.infrastucture.persistence.repositories.RelationshipRepository
+            relationshipRepository;
     private final RelationshipMapper relationshipMapper;
     private final UserNodeRepository userNodeRepository;
     private final UserNodeMapper userNodeMapper;
 
-    public Neo4jRelationshipRepositoryAdapter(com.calendar.social.infrastucture.persistence.repositories.RelationshipRepository relationshipRepository, RelationshipMapper relationshipMapper, UserNodeRepository userNodeRepository, UserNodeMapper userNodeMapper) {
+    public Neo4jRelationshipRepositoryAdapter(
+            com.calendar.social.infrastucture.persistence.repositories.RelationshipRepository
+                    relationshipRepository,
+            RelationshipMapper relationshipMapper,
+            UserNodeRepository userNodeRepository,
+            UserNodeMapper userNodeMapper) {
         this.relationshipRepository = relationshipRepository;
         this.relationshipMapper = relationshipMapper;
         this.userNodeRepository = userNodeRepository;
@@ -35,97 +46,71 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
 
     @Override
     public Mono<Void> save(UserCreatedEventDTO event) {
-        return userNodeRepository.upsert(
-                        event.userId(), event.userName(), event.hashtag(), event.profilePicUrl())
-                .onErrorMap(e -> {
-                    log.error("Error while upserting user node, userId={}: {}",
-                            event.userId(), e.getMessage());
-                    return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
-                })
+        return userNodeRepository
+                .upsert(event.userId(), event.userName(), event.hashtag(), event.profilePicUrl())
                 .then();
     }
 
+    @Override
     public Flux<UserSocialDTO> findAllWithSocialStatus(String userId) {
-        return userNodeRepository.findAllWithSocialStatus(userId)
-                .map(userNodeMapper::toUserSocialDTO)
-                .onErrorMap(e -> {
-                    log.error("Erreur lors de la recherche des utilisateurs : {}", e.getMessage());
-                    return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
-                });
+        return userNodeRepository.findAllWithSocialStatus(userId).map(userNodeMapper::toUserSocialDTO);
     }
 
+    @Override
     public Flux<UserNodeDTO> findAllFriends(String userId) {
-        return userNodeRepository.findAllFriends(userId)
-                .map(userNodeMapper::toUserNode)
-                .onErrorMap(e -> {
-                    log.error("Erreur lors de la recherche des amis : {}", e.getMessage());
-                    return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
-                });
+        return userNodeRepository.findAllFriends(userId).map(userNodeMapper::toUserNode);
     }
 
+    @Override
     public Mono<Boolean> existsByUserNameAndHashtag(String userName, Integer hashtag) {
-        return userNodeRepository.existsByUserNameAndHashtag(userName, hashtag)
-                .onErrorMap(e -> {
-                    log.error("Erreur lors de la vérification de l'existance de l'utilisateur (hashtag) : {}", e.getMessage());
-                    return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
-                });
+        return userNodeRepository.existsByUserNameAndHashtag(userName, hashtag);
     }
 
+    @Override
     public Flux<UserNodeDTO> findOutgoingRequests(String userId) {
-        return userNodeRepository.findOutgoingRequests(userId)
-                .map(userNodeMapper::toUserNode)
-                .onErrorMap(e -> {
-                    log.error("Error while fetching outgoing friend requests: {}", e.getMessage());
-                    return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
-                });
+        return userNodeRepository.findOutgoingRequests(userId).map(userNodeMapper::toUserNode);
     }
 
+    @Override
     public Flux<UserNodeDTO> findIncomingRequests(String userId) {
-        return userNodeRepository.findIncomingRequests(userId)
-                .map(userNodeMapper::toUserNode)
-                .onErrorMap(e -> {
-                    log.error("Error while fetching incoming friend requests: {}", e.getMessage());
-                    return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
-                });
+        return userNodeRepository.findIncomingRequests(userId).map(userNodeMapper::toUserNode);
     }
 
+    @Override
     public Mono<UserNodeDTO> sendFriendRequest(String userId, String targetName, Integer targetHashtag) {
-        return userNodeRepository.sendFriendRequest(userId, targetName, targetHashtag)
+        return userNodeRepository
+                .sendFriendRequest(userId, targetName, targetHashtag)
                 .map(userNodeMapper::toUserNode)
-                .onErrorMap(e -> {
-                    log.error("Erreur lors de l'envoi de la demande d'amis : {}", e.getMessage());
-                    return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
-                })
-                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.SEND_FRIEND_REQUEST_FAILURE)));
+                // Empty means the Cypher matched nothing: no such user, or the two are
+                // already related.
+                .switchIfEmpty(Mono.error(
+                        new BusinessException(BusinessErrorCode.SEND_FRIEND_REQUEST_FAILURE)));
     }
 
+    @Override
     public Mono<UserNodeDTO> acceptFriendRequest(String userId, String senderId) {
-        return userNodeRepository.acceptFriendRequest(userId, senderId)
+        return userNodeRepository
+                .acceptFriendRequest(userId, senderId)
                 .map(userNodeMapper::toUserNode)
-                .onErrorMap(e -> {
-                    log.error("Erreur lors de l'acceptation de la demande d'amis : {}", e.getMessage());
-                    return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
-                })
-                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.ACCEPT_FRIEND_REQUEST_FAILURE)));
+                .switchIfEmpty(Mono.error(
+                        new BusinessException(BusinessErrorCode.ACCEPT_FRIEND_REQUEST_FAILURE)));
     }
 
+    @Override
     public Mono<UserNodeDTO> rejectFriendRequest(String userId, String senderId) {
-        return userNodeRepository.rejectFriendRequest(userId, senderId)
+        return userNodeRepository
+                .rejectFriendRequest(userId, senderId)
                 .map(userNodeMapper::toUserNode)
-                .onErrorMap(e -> {
-                    log.error("Erreur lors du rejet de la demande d'amis : {}", e.getMessage());
-                    return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
-                })
-                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.REJECT_FRIEND_REQUEST_FAILURE)));
+                .switchIfEmpty(Mono.error(
+                        new BusinessException(BusinessErrorCode.REJECT_FRIEND_REQUEST_FAILURE)));
     }
 
+    @Override
     public Mono<RelationshipDTO> deleteFriendship(String userId, String friendId) {
-        return relationshipRepository.deleteFriendship(userId, friendId)
+        return relationshipRepository
+                .deleteFriendship(userId, friendId)
                 .map(relationshipMapper::toRelationshipDTO)
-                .onErrorMap(e -> {
-                    log.error("Erreur lors de la suppression de l'ami : {}", e.getMessage());
-                    return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
-                })
-                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.DELETE_FRIENDSHIP_FAILURE)));
+                .switchIfEmpty(Mono.error(
+                        new BusinessException(BusinessErrorCode.DELETE_FRIENDSHIP_FAILURE)));
     }
 }

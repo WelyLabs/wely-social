@@ -29,6 +29,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+/**
+ * The ten {@code *_shouldMapError} cases that used to live here are gone: translating an
+ * infrastructure failure into {@code TechnicalException(DATABASE_ERROR)} moved out of this
+ * class and into {@code PersistenceErrorAspect}. That is the trade-off of an aspect — the
+ * behaviour is no longer reachable from a plain unit test of the adapter, because it is
+ * the Spring proxy that carries it.
+ *
+ * <p>The coverage moved with it, to {@code PersistenceErrorAspectTest} for the logic and
+ * {@code PersistenceErrorAspectWiringTest} for proof that the pointcut actually matches
+ * these methods.
+ */
 class Neo4jRelationshipRepositoryAdapterTest {
 
     @Mock
@@ -75,16 +86,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
         verify(userNodeRepository, never()).save(any());
     }
 
-    @Test
-    void save_shouldMapError() {
-        UserCreatedEventDTO event = new UserCreatedEventDTO("id1", "user", 1234, "avatar");
-        when(userNodeRepository.upsert(any(), any(), any(), any()))
-                .thenReturn(Mono.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.save(event))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void findAllWithSocialStatus_shouldReturnMappedFlux() {
@@ -98,15 +99,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void findAllWithSocialStatus_shouldMapError() {
-        when(userNodeRepository.findAllWithSocialStatus("userId"))
-                .thenReturn(Flux.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.findAllWithSocialStatus("userId"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void findAllFriends_shouldReturnMappedFlux() {
@@ -120,14 +112,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void findAllFriends_shouldMapError() {
-        when(userNodeRepository.findAllFriends("userId")).thenReturn(Flux.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.findAllFriends("userId"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void existsByUserNameAndHashtag_shouldReturnBoolean() {
@@ -138,15 +122,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void existsByUserNameAndHashtag_shouldMapError() {
-        when(userNodeRepository.existsByUserNameAndHashtag("user", 1234))
-                .thenReturn(Mono.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.existsByUserNameAndHashtag("user", 1234))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void findOutgoingRequests_shouldReturnMappedFlux() {
@@ -160,15 +135,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void findOutgoingRequests_shouldMapError() {
-        when(userNodeRepository.findOutgoingRequests("userId"))
-                .thenReturn(Flux.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.findOutgoingRequests("userId"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void findIncomingRequests_shouldReturnMappedFlux() {
@@ -182,15 +148,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void findIncomingRequests_shouldMapError() {
-        when(userNodeRepository.findIncomingRequests("userId"))
-                .thenReturn(Flux.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.findIncomingRequests("userId"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void sendFriendRequest_Success() {
@@ -204,15 +161,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void sendFriendRequest_shouldMapError() {
-        when(userNodeRepository.sendFriendRequest("u1", "u2", 1234))
-                .thenReturn(Mono.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.sendFriendRequest("u1", "u2", 1234))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void sendFriendRequest_shouldReturnErrorOnEmpty() {
@@ -235,15 +183,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void acceptFriendRequest_shouldMapError() {
-        when(userNodeRepository.acceptFriendRequest("u1", "u2"))
-                .thenReturn(Mono.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.acceptFriendRequest("u1", "u2"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void acceptFriendRequest_shouldReturnErrorOnEmpty() {
@@ -266,15 +205,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void rejectFriendRequest_shouldMapError() {
-        when(userNodeRepository.rejectFriendRequest("u1", "u2"))
-                .thenReturn(Mono.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.rejectFriendRequest("u1", "u2"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void rejectFriendRequest_shouldReturnErrorOnEmpty() {
@@ -297,15 +227,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .verifyComplete();
     }
 
-    @Test
-    void deleteFriendship_shouldMapError() {
-        when(relationshipRepository.deleteFriendship("u1", "u2"))
-                .thenReturn(Mono.error(new RuntimeException("DB error")));
-
-        StepVerifier.create(adapter.deleteFriendship("u1", "u2"))
-                .expectError(TechnicalException.class)
-                .verify();
-    }
 
     @Test
     void deleteFriendship_shouldReturnErrorOnEmpty() {
