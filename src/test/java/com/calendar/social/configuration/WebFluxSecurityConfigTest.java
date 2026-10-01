@@ -28,9 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class WebFluxSecurityConfigTest {
 
-    private static final String PUBLIC_ISSUER = "https://auth.example.test/realms/calendar-app";
+    private static final String PUBLIC_ISSUER = "https://auth.example.test/realms/wely-realm";
     private static final String INTERNAL_JWKS =
-            "http://wely-auth-service:8080/realms/calendar-app/protocol/openid-connect/certs";
+            "http://wely-auth-service:8080/realms/wely-realm/protocol/openid-connect/certs";
 
     private WebFluxSecurityConfig config;
 
