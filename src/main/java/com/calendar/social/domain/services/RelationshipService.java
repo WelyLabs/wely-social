@@ -1,5 +1,8 @@
 package com.calendar.social.domain.services;
 
+import com.calendar.social.domain.models.Closeness;
+import com.calendar.social.domain.models.FriendSummary;
+import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserDeletedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
@@ -12,6 +15,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.Objects;
+import java.util.function.UnaryOperator;
 
 public class RelationshipService {
 
@@ -62,5 +66,38 @@ public class RelationshipService {
             case "FRIENDS" -> relationshipRepository.findAllFriends(userId).cast(UserResult.class);
             default -> Flux.empty();
         };
+    }
+
+    public Mono<Friendship> findFriendship(String userId, String friendId) {
+        return relationshipRepository.findFriendship(userId, friendId)
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.NOT_FRIENDS)));
+    }
+
+    public Flux<FriendSummary> listFriendships(String userId) {
+        return relationshipRepository.findFriendSummaries(userId);
+    }
+
+    public Mono<Friendship> requestCloseness(String userId, String friendId, Closeness target) {
+        return change(userId, friendId, friendship -> friendship.requestCloseness(target));
+    }
+
+    public Mono<Friendship> acceptCloseness(String userId, String friendId) {
+        return change(userId, friendId, Friendship::acceptProposal);
+    }
+
+    public Mono<Friendship> declineCloseness(String userId, String friendId) {
+        return change(userId, friendId, Friendship::declineProposal);
+    }
+
+    /** Read, decide in the domain, then write only if nobody wrote in between. */
+    private Mono<Friendship> change(String userId, String friendId, UnaryOperator<Friendship> decision) {
+        return findFriendship(userId, friendId).flatMap(current -> {
+            Friendship next = decision.apply(current);
+            if (next.equals(current)) {
+                return Mono.just(current);
+            }
+            return relationshipRepository.updateCloseness(userId, next, current.version())
+                    .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CLOSENESS_CONFLICT)));
+        });
     }
 }

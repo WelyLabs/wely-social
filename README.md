@@ -73,6 +73,27 @@ Une seule requête renvoie la liste des utilisateurs **et** le statut relationne
 
 Les transitions d'état sont atomiques : accepter une demande est un `SET r.status = 'ACCEPTED'` sur une arête filtrée par `{status: 'PENDING'}`, ce qui rend l'opération idempotente et interdit d'accepter une demande inexistante.
 
+### Niveau de proximité
+
+Une amitié acceptée porte un niveau, `FRIEND` < `CLOSE` < `INTIMATE`, stocké sur l'arête :
+
+| Propriété | Sens |
+|---|---|
+| `closeness` | Niveau convenu par les deux. Absent = `FRIEND` |
+| `proposedCloseness` | Niveau supérieur demandé par l'un, en attente de l'autre |
+| `proposedBy` | `userId` de celui qui l'a demandé |
+| `closenessVersion` | Incrémenté à chaque changement. Absent = 0 |
+
+Les règles vivent dans le domaine (`Friendship`), pas dans le Cypher :
+
+- **monter** d'un niveau est une proposition, appliquée seulement quand l'autre l'accepte — ou la demande à son tour ;
+- **descendre** s'applique tout de suite, sans l'accord de l'autre, et annule toute proposition : on ne doit jamais avoir besoin de l'autre pour reprendre sa vie privée ;
+- redemander son niveau actuel retire sa propre proposition.
+
+Le service lit l'amitié, décide, puis écrit **à condition que la version n'ait pas bougé** (verrou optimiste) : si les deux répondent en même temps, la seconde écriture ne trouve rien et reçoit un 409 plutôt que d'écraser la première.
+
+Ce que chaque niveau dévoile d'un calendrier ne se décide pas ici : c'est `wely-events` qui le lit (`GET /relationships/{friendId}`) et l'applique. Supprimer une amitié supprime l'arête, donc le niveau : redevenir amis repart de `FRIEND`.
+
 ---
 
 ## Architecture
@@ -125,6 +146,11 @@ Préfixées par `/social-service`, exposées sur `/api/v1/social-service/**`. To
 | `PUT` | `/relationships/accept/{senderId}` | Accepte une demande reçue |
 | `PUT` | `/relationships/reject/{senderId}` | Rejette une demande reçue |
 | `DELETE` | `/relationships/{friendId}` | Supprime une amitié |
+| `GET` | `/relationships` | Mes amis, avec le niveau et la proposition en cours |
+| `GET` | `/relationships/{friendId}` | Une amitié vue de l'appelant (404 si pas amis). Appelée par `wely-events` |
+| `PUT` | `/relationships/{friendId}/closeness` | Demande un niveau (`{"closeness": "CLOSE"}`) : propose s'il est plus haut, applique s'il est plus bas |
+| `PUT` | `/relationships/{friendId}/closeness/accept` | Accepte le niveau proposé par l'ami |
+| `PUT` | `/relationships/{friendId}/closeness/decline` | Refuse le niveau proposé par l'ami |
 
 L'identifiant de l'appelant n'est **jamais** accepté en paramètre : il provient systématiquement du token. Les requêtes Cypher sont ancrées sur `(me:User {userId: $userId})`, ce qui rend structurellement impossible d'agir sur la relation d'un tiers.
 
@@ -181,6 +207,9 @@ Envoyé quand `wely-users` supprime un utilisateur laissé par une inscription q
 | `SCL-BUS-004` | 400 | Aucune amitié à supprimer |
 | `SCL-BUS-005` | 404 | Utilisateur inexistant |
 | `SCL-BUS-006` | 400 | Handle malformé — le format est `Nom#1234` |
+| `SCL-BUS-007` | 404 | Pas d'amitié acceptée avec cet utilisateur |
+| `SCL-BUS-008` | 400 | Rien à accepter ou refuser — l'ami n'a proposé aucun niveau |
+| `SCL-BUS-009` | 409 | L'amitié a changé entre la lecture et l'écriture — recharger et réessayer |
 | `SCL-VAL-001` | 400 | Validation du corps de requête, détail par champ |
 | `SCL-REQ-000` | *repris* | Chemin inconnu, méthode non autorisée |
 | `SCL-TEC-001` | 502 | Neo4j injoignable |

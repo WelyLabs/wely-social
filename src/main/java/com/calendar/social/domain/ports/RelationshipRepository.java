@@ -1,5 +1,7 @@
 package com.calendar.social.domain.ports;
 
+import com.calendar.social.domain.models.FriendSummary;
+import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
@@ -31,4 +33,15 @@ public interface RelationshipRepository {
     Mono<Boolean> existsByUserNameAndHashtag(String userName, Integer hashtag);
 
     Mono<RelationshipDTO> deleteFriendship(String userId, String friendId);
+
+    /** The accepted friendship between the two, seen from {@code userId}; empty if they are not friends. */
+    Mono<Friendship> findFriendship(String userId, String friendId);
+
+    Flux<FriendSummary> findFriendSummaries(String userId);
+
+    /**
+     * Writes the closeness of {@code changed}, provided nobody changed the friendship since
+     * {@code expectedVersion} was read; empty otherwise.
+     */
+    Mono<Friendship> updateCloseness(String userId, Friendship changed, long expectedVersion);
 }

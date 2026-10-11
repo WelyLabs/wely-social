@@ -49,7 +49,25 @@ public enum BusinessErrorCode {
             "SCL-BUS-006",
             "Malformed handle",
             "A handle looks like Name#1234: up to thirty characters, then four digits.",
-            HttpStatus.BAD_REQUEST);
+            HttpStatus.BAD_REQUEST),
+
+    NOT_FRIENDS(
+            "SCL-BUS-007",
+            "Not friends",
+            "There is no accepted friendship with this user.",
+            HttpStatus.NOT_FOUND),
+
+    NO_CLOSENESS_PROPOSAL(
+            "SCL-BUS-008",
+            "Nothing to answer",
+            "This friend has not proposed a closer relationship.",
+            HttpStatus.BAD_REQUEST),
+
+    CLOSENESS_CONFLICT(
+            "SCL-BUS-009",
+            "Friendship changed meanwhile",
+            "The friendship was changed by the other side at the same time. Reload and try again.",
+            HttpStatus.CONFLICT);
 
     private final String code;
     private final String title;

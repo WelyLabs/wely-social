@@ -6,7 +6,13 @@ import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserSocialDTO;
 import com.calendar.social.exception.BusinessException;
 import com.calendar.social.exception.TechnicalException;
+import com.calendar.social.infrastructure.persistence.mappers.FriendshipMapper;
 import com.calendar.social.infrastructure.persistence.mappers.RelationshipMapper;
+import com.calendar.social.infrastructure.persistence.models.dtos.FriendSummaryDBDTO;
+import com.calendar.social.infrastructure.persistence.models.dtos.FriendshipDBDTO;
+import com.calendar.social.domain.models.Closeness;
+import com.calendar.social.domain.models.FriendSummary;
+import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.infrastructure.persistence.mappers.UserNodeMapper;
 import com.calendar.social.infrastructure.persistence.models.dtos.UserSocialDBDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.RelationshipDBDTO;
@@ -47,12 +53,14 @@ class Neo4jRelationshipRepositoryAdapterTest {
     private UserNodeRepository userNodeRepository;
     @Mock
     private UserNodeMapper userNodeMapper;
+    @Mock
+    private FriendshipMapper friendshipMapper;
 
     private Neo4jRelationshipRepositoryAdapter adapter;
 
     @BeforeEach
     void setUp() {
-        adapter = new Neo4jRelationshipRepositoryAdapter(relationshipMapper, userNodeRepository, userNodeMapper);
+        adapter = new Neo4jRelationshipRepositoryAdapter(relationshipMapper, userNodeRepository, userNodeMapper, friendshipMapper);
     }
 
     @Test
@@ -242,5 +250,62 @@ class Neo4jRelationshipRepositoryAdapterTest {
         StepVerifier.create(adapter.delete("id1")).verifyComplete();
 
         org.mockito.Mockito.verify(userNodeRepository).deleteUser("id1");
+    }
+
+    @Test
+    void findFriendship_shouldMapTheRow() {
+        FriendshipDBDTO row = new FriendshipDBDTO("bob", "CLOSE", null, false, 2L);
+        Friendship friendship = new Friendship("bob", Closeness.CLOSE, null, false, 2);
+        when(userNodeRepository.findFriendship("alice", "bob")).thenReturn(Mono.just(row));
+        when(friendshipMapper.toFriendship(row)).thenReturn(friendship);
+
+        StepVerifier.create(adapter.findFriendship("alice", "bob"))
+                .expectNext(friendship)
+                .verifyComplete();
+    }
+
+    @Test
+    void findFriendSummaries_shouldMapEachRow() {
+        FriendSummaryDBDTO row = new FriendSummaryDBDTO("bob", "bob", 2222, null, "FRIEND", null, false);
+        FriendSummary summary = new FriendSummary("bob", "bob", 2222, null, Closeness.FRIEND, null, false);
+        when(userNodeRepository.findFriendSummaries("alice")).thenReturn(Flux.just(row));
+        when(friendshipMapper.toFriendSummary(row)).thenReturn(summary);
+
+        StepVerifier.create(adapter.findFriendSummaries("alice"))
+                .expectNext(summary)
+                .verifyComplete();
+    }
+
+    @Test
+    void updateCloseness_shouldStoreTheCallerAsProposer_whenTheProposalIsMine() {
+        Friendship changed = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, false, 1);
+        when(userNodeRepository.updateCloseness("alice", "bob", "FRIEND", "CLOSE", "alice", 1L)).thenReturn(Mono.empty());
+
+        StepVerifier.create(adapter.updateCloseness("alice", changed, 1)).verifyComplete();
+
+        verify(userNodeRepository).updateCloseness("alice", "bob", "FRIEND", "CLOSE", "alice", 1L);
+    }
+
+    @Test
+    void updateCloseness_shouldStoreTheFriendAsProposer_whenTheProposalIsTheirs() {
+        Friendship changed = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, true, 1);
+        when(userNodeRepository.updateCloseness(any(), any(), any(), any(), any(), anyLong())).thenReturn(Mono.empty());
+
+        adapter.updateCloseness("alice", changed, 1).block();
+
+        verify(userNodeRepository).updateCloseness("alice", "bob", "FRIEND", "CLOSE", "bob", 1L);
+    }
+
+    @Test
+    void updateCloseness_shouldClearTheProposal_whenThereIsNone() {
+        FriendshipDBDTO row = new FriendshipDBDTO("bob", "INTIMATE", null, false, 2L);
+        Friendship changed = new Friendship("bob", Closeness.INTIMATE, null, false, 1);
+        Friendship written = new Friendship("bob", Closeness.INTIMATE, null, false, 2);
+        when(userNodeRepository.updateCloseness("alice", "bob", "INTIMATE", null, null, 1L)).thenReturn(Mono.just(row));
+        when(friendshipMapper.toFriendship(row)).thenReturn(written);
+
+        StepVerifier.create(adapter.updateCloseness("alice", changed, 1))
+                .expectNext(written)
+                .verifyComplete();
     }
 }
