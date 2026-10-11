@@ -1,5 +1,7 @@
 package com.calendar.social.infrastructure.persistence.repositories;
 
+import com.calendar.social.infrastructure.persistence.models.dtos.FriendSummaryDBDTO;
+import com.calendar.social.infrastructure.persistence.models.dtos.FriendshipDBDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.RelationshipDBDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.UserSocialDBDTO;
 import com.calendar.social.infrastructure.persistence.models.entities.UserNodeEntity;
@@ -104,4 +106,46 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
     /** DETACH DELETE: the user's relationships go with it. A missing user matches nothing. */
     @Query("MATCH (u:User {userId: $userId}) DETACH DELETE u")
     Mono<Void> deleteUser(String userId);
+
+    // Closeness lives on the RELATIONSHIP: closeness (absent means FRIEND), proposedCloseness,
+    // proposedBy (the userId who proposed it) and closenessVersion (absent means 0). The match
+    // is undirected, as for every friendship query, and every read is relative to $myId.
+
+    @Query("MATCH (me:User {userId: $myId})-[r:RELATIONSHIP {status: 'ACCEPTED'}]-(other:User {userId: $otherId}) "
+            + "RETURN other.userId AS friendId, "
+            + "       coalesce(r.closeness, 'FRIEND') AS closeness, "
+            + "       r.proposedCloseness AS proposal, "
+            + "       coalesce(r.proposedBy = other.userId, false) AS proposedByFriend, "
+            + "       coalesce(r.closenessVersion, 0) AS version "
+            + "LIMIT 1")
+    Mono<FriendshipDBDTO> findFriendship(String myId, String otherId);
+
+    @Query("MATCH (me:User {userId: $myId})-[r:RELATIONSHIP {status: 'ACCEPTED'}]-(other:User) "
+            + "RETURN DISTINCT other.userId AS userId, "
+            + "       other.userName AS userName, "
+            + "       other.hashtag AS hashtag, "
+            + "       other.profilePicUrl AS profilePicUrl, "
+            + "       coalesce(r.closeness, 'FRIEND') AS closeness, "
+            + "       r.proposedCloseness AS proposal, "
+            + "       coalesce(r.proposedBy = other.userId, false) AS proposedByFriend "
+            + "ORDER BY userName ASC")
+    Flux<FriendSummaryDBDTO> findFriendSummaries(String myId);
+
+    /**
+     * Optimistic update: matches only if the version is still the one the decision was made on.
+     * Setting a property to null removes it, which is how a proposal is cleared.
+     */
+    @Query("MATCH (me:User {userId: $myId})-[r:RELATIONSHIP {status: 'ACCEPTED'}]-(other:User {userId: $otherId}) "
+            + "WHERE coalesce(r.closenessVersion, 0) = $expectedVersion "
+            + "SET r.closeness = $closeness, "
+            + "    r.proposedCloseness = $proposal, "
+            + "    r.proposedBy = $proposedBy, "
+            + "    r.closenessVersion = $expectedVersion + 1 "
+            + "RETURN other.userId AS friendId, "
+            + "       r.closeness AS closeness, "
+            + "       r.proposedCloseness AS proposal, "
+            + "       coalesce(r.proposedBy = other.userId, false) AS proposedByFriend, "
+            + "       r.closenessVersion AS version")
+    Mono<FriendshipDBDTO> updateCloseness(String myId, String otherId, String closeness, String proposal,
+                                          String proposedBy, Long expectedVersion);
 }

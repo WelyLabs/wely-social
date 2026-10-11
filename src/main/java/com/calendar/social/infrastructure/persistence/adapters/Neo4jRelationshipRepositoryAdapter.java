@@ -1,5 +1,7 @@
 package com.calendar.social.infrastructure.persistence.adapters;
 
+import com.calendar.social.domain.models.FriendSummary;
+import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
@@ -7,6 +9,7 @@ import com.calendar.social.domain.models.UserSocialDTO;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
+import com.calendar.social.infrastructure.persistence.mappers.FriendshipMapper;
 import com.calendar.social.infrastructure.persistence.mappers.RelationshipMapper;
 import com.calendar.social.infrastructure.persistence.mappers.UserNodeMapper;
 import com.calendar.social.infrastructure.persistence.repositories.UserNodeRepository;
@@ -29,14 +32,17 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
     private final RelationshipMapper relationshipMapper;
     private final UserNodeRepository userNodeRepository;
     private final UserNodeMapper userNodeMapper;
+    private final FriendshipMapper friendshipMapper;
 
     public Neo4jRelationshipRepositoryAdapter(
             RelationshipMapper relationshipMapper,
             UserNodeRepository userNodeRepository,
-            UserNodeMapper userNodeMapper) {
+            UserNodeMapper userNodeMapper,
+            FriendshipMapper friendshipMapper) {
         this.relationshipMapper = relationshipMapper;
         this.userNodeRepository = userNodeRepository;
         this.userNodeMapper = userNodeMapper;
+        this.friendshipMapper = friendshipMapper;
     }
 
     @Override
@@ -112,5 +118,27 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
                 .map(relationshipMapper::toRelationshipDTO)
                 .switchIfEmpty(Mono.error(
                         new BusinessException(BusinessErrorCode.DELETE_FRIENDSHIP_FAILURE)));
+    }
+
+    @Override
+    public Mono<Friendship> findFriendship(String userId, String friendId) {
+        return userNodeRepository.findFriendship(userId, friendId).map(friendshipMapper::toFriendship);
+    }
+
+    @Override
+    public Flux<FriendSummary> findFriendSummaries(String userId) {
+        return userNodeRepository.findFriendSummaries(userId).map(friendshipMapper::toFriendSummary);
+    }
+
+    @Override
+    public Mono<Friendship> updateCloseness(String userId, Friendship changed, long expectedVersion) {
+        // The domain says who proposed relative to the caller; the graph stores the userId.
+        String proposedBy = changed.proposal() == null ? null
+                : changed.proposedByFriend() ? changed.friendId() : userId;
+        return userNodeRepository
+                .updateCloseness(userId, changed.friendId(), changed.closeness().name(),
+                        changed.proposal() == null ? null : changed.proposal().name(),
+                        proposedBy, expectedVersion)
+                .map(friendshipMapper::toFriendship);
     }
 }

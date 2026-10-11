@@ -1,5 +1,8 @@
 package com.calendar.social.infrastructure.persistence.adapters;
 
+import com.calendar.social.domain.models.Closeness;
+import com.calendar.social.domain.models.FriendSummary;
+import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.exception.BusinessException;
 import com.calendar.social.domain.models.UserSocialDTO;
@@ -300,5 +303,89 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         adapter.delete(ALICE).block();
 
         StepVerifier.create(adapter.delete(ALICE)).verifyComplete();
+    }
+
+    private void friends(String sender, String target, String targetName, int targetHashtag) {
+        adapter.sendFriendRequest(sender, targetName, targetHashtag).block();
+        adapter.acceptFriendRequest(target, sender).block();
+    }
+
+    @Test
+    @DisplayName("a friendship without closeness reads as FRIEND, version 0, from both sides")
+    void findFriendship_shouldDefaultToFriend() {
+        friends(ALICE, BOB, "bob", 2222);
+
+        assertThat(adapter.findFriendship(ALICE, BOB).block())
+                .isEqualTo(new Friendship(BOB, Closeness.FRIEND, null, false, 0));
+        assertThat(adapter.findFriendship(BOB, ALICE).block())
+                .isEqualTo(new Friendship(ALICE, Closeness.FRIEND, null, false, 0));
+    }
+
+    @Test
+    @DisplayName("a pending request is not a friendship")
+    void findFriendship_shouldIgnorePendingRequests() {
+        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+
+        StepVerifier.create(adapter.findFriendship(ALICE, BOB)).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("a proposal reads as mine from one side and as the friend's from the other")
+    void updateCloseness_shouldStoreWhoProposed() {
+        friends(ALICE, BOB, "bob", 2222);
+
+        Friendship written = adapter.updateCloseness(ALICE,
+                new Friendship(BOB, Closeness.FRIEND, Closeness.INTIMATE, false, 0), 0).block();
+
+        assertThat(written).isEqualTo(new Friendship(BOB, Closeness.FRIEND, Closeness.INTIMATE, false, 1));
+        assertThat(adapter.findFriendship(BOB, ALICE).block())
+                .isEqualTo(new Friendship(ALICE, Closeness.FRIEND, Closeness.INTIMATE, true, 1));
+    }
+
+    @Test
+    @DisplayName("clearing the proposal removes it from the relationship")
+    void updateCloseness_shouldClearTheProposal() {
+        friends(ALICE, BOB, "bob", 2222);
+        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.FRIEND, Closeness.CLOSE, false, 0), 0).block();
+
+        adapter.updateCloseness(BOB, new Friendship(ALICE, Closeness.CLOSE, null, false, 1), 1).block();
+
+        assertThat(adapter.findFriendship(ALICE, BOB).block())
+                .isEqualTo(new Friendship(BOB, Closeness.CLOSE, null, false, 2));
+    }
+
+    @Test
+    @DisplayName("a write based on a stale version matches nothing")
+    void updateCloseness_shouldRefuseAStaleVersion() {
+        // Two sides answering at once both read version 0; only the first write may land.
+        friends(ALICE, BOB, "bob", 2222);
+        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.FRIEND, Closeness.CLOSE, false, 0), 0).block();
+
+        StepVerifier.create(adapter.updateCloseness(BOB, new Friendship(ALICE, Closeness.INTIMATE, null, false, 0), 0))
+                .verifyComplete();
+        assertThat(adapter.findFriendship(ALICE, BOB).block().closeness()).isEqualTo(Closeness.FRIEND);
+    }
+
+    @Test
+    @DisplayName("friend summaries list only accepted friends, with their closeness")
+    void findFriendSummaries_shouldListFriendsWithTheirCloseness() {
+        friends(ALICE, BOB, "bob", 2222);
+        adapter.sendFriendRequest(ALICE, "carol", 3333).block();
+        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.CLOSE, null, false, 0), 0).block();
+
+        assertThat(adapter.findFriendSummaries(ALICE).collectList().block())
+                .containsExactly(new FriendSummary(BOB, "bob", 2222, null, Closeness.CLOSE, null, false));
+    }
+
+    @Test
+    @DisplayName("removing a friend forgets the closeness: becoming friends again starts over")
+    void deleteFriendship_shouldForgetTheCloseness() {
+        friends(ALICE, BOB, "bob", 2222);
+        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.INTIMATE, null, false, 0), 0).block();
+
+        adapter.deleteFriendship(ALICE, BOB).block();
+        friends(BOB, ALICE, "alice", 1111);
+
+        assertThat(adapter.findFriendship(ALICE, BOB).block().closeness()).isEqualTo(Closeness.FRIEND);
     }
 }

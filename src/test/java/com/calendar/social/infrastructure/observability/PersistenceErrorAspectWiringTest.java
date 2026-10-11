@@ -4,6 +4,7 @@ import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.TechnicalErrorCode;
 import com.calendar.social.exception.TechnicalException;
 import com.calendar.social.infrastructure.persistence.adapters.Neo4jRelationshipRepositoryAdapter;
+import com.calendar.social.infrastructure.persistence.mappers.FriendshipMapper;
 import com.calendar.social.infrastructure.persistence.mappers.RelationshipMapper;
 import com.calendar.social.infrastructure.persistence.mappers.UserNodeMapper;
 import com.calendar.social.infrastructure.persistence.repositories.UserNodeRepository;
@@ -54,7 +55,8 @@ class PersistenceErrorAspectWiringTest {
             return new Neo4jRelationshipRepositoryAdapter(
                     mock(RelationshipMapper.class),
                     userNodeRepository,
-                    mock(UserNodeMapper.class));
+                    mock(UserNodeMapper.class),
+                    mock(FriendshipMapper.class));
         }
     }
 
