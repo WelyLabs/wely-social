@@ -11,6 +11,9 @@ public interface RelationshipRepository {
 
     Mono<Void> save(UserCreatedEventDTO userCreatedEventDTO);
 
+    /** Removes the user and every relationship it has. Deleting a missing user is not an error. */
+    Mono<Void> delete(String userId);
+
     Flux<UserSocialDTO> findAllWithSocialStatus(String userId);
 
     Flux<UserNodeDTO> findAllFriends(String userId);

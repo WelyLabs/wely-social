@@ -1,6 +1,7 @@
 package com.calendar.social.domain.services;
 
 import com.calendar.social.domain.models.UserCreatedEventDTO;
+import com.calendar.social.domain.models.UserDeletedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserResult;
 import com.calendar.social.domain.models.UserTag;
@@ -44,6 +45,10 @@ public class RelationshipService {
 
     public Mono<Void> writeUser(UserCreatedEventDTO userCreatedEventDTO) {
         return relationshipRepository.save(userCreatedEventDTO);
+    }
+
+    public Mono<Void> removeUser(UserDeletedEventDTO userDeletedEventDTO) {
+        return relationshipRepository.delete(userDeletedEventDTO.userId());
     }
 
     public Flux<UserResult> readAllWithSocialStatus(String userId, String friendshipsStatus) {

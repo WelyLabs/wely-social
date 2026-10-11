@@ -1,6 +1,7 @@
 package com.calendar.social.configuration;
 
 import com.calendar.social.domain.models.UserCreatedEventDTO;
+import com.calendar.social.domain.models.UserDeletedEventDTO;
 import com.calendar.social.domain.services.RelationshipService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -12,9 +13,10 @@ import reactor.util.retry.Retry;
 
 import java.time.Duration;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
- * Consumes {@code USER_CREATED} and materialises the corresponding node in the graph.
+ * Consumes {@code USER_CREATED} and {@code USER_DELETED}: creates or removes the user's node.
  *
  * <h2>Why every failure is handled here</h2>
  *
@@ -48,24 +50,31 @@ public class KafkaConsumerConfig {
 
     @Bean
     public Consumer<Flux<Message<UserCreatedEventDTO>>> userCreated() {
-        return flux -> flux
-                .concatMap(this::writeUserNode)
-                .subscribe(
-                        unused -> { },
-                        error -> log.error("USER_CREATED subscription terminated; "
-                                + "no further events will be consumed until restart", error));
+        return flux -> consume("USER_CREATED", flux, UserCreatedEventDTO::userId, relationshipService::writeUser);
     }
 
-    private Mono<Void> writeUserNode(Message<UserCreatedEventDTO> message) {
-        UserCreatedEventDTO event = message.getPayload();
+    /** Sent by wely-users when it removes a user left by a cancelled registration. */
+    @Bean
+    public Consumer<Flux<Message<UserDeletedEventDTO>>> userDeleted() {
+        return flux -> consume("USER_DELETED", flux, UserDeletedEventDTO::userId, relationshipService::removeUser);
+    }
 
-        return relationshipService.writeUser(event)
-                .retryWhen(Retry.backoff(MAX_ATTEMPTS, FIRST_BACKOFF))
-                .doOnSuccess(unused -> log.debug("USER_CREATED applied, userId={}", event.userId()))
-                .onErrorResume(error -> {
-                    log.error("USER_CREATED dropped after {} attempts, userId={}: {}",
-                            MAX_ATTEMPTS, event.userId(), error.getMessage(), error);
-                    return Mono.empty();
-                });
+    private <T> void consume(String type, Flux<Message<T>> flux,
+                             Function<T, String> userId, Function<T, Mono<Void>> apply) {
+        flux.concatMap(message -> {
+                    T event = message.getPayload();
+                    return apply.apply(event)
+                            .retryWhen(Retry.backoff(MAX_ATTEMPTS, FIRST_BACKOFF))
+                            .doOnSuccess(unused -> log.debug("{} applied, userId={}", type, userId.apply(event)))
+                            .onErrorResume(error -> {
+                                log.error("{} dropped after {} attempts, userId={}: {}",
+                                        type, MAX_ATTEMPTS, userId.apply(event), error.getMessage(), error);
+                                return Mono.empty();
+                            });
+                })
+                .subscribe(
+                        unused -> { },
+                        error -> log.error("{} subscription terminated; "
+                                + "no further events will be consumed until restart", type, error));
     }
 }

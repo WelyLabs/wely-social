@@ -100,4 +100,8 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
             + "DELETE r "
             + "RETURN status, createdAt, acceptedAt, rejectedAt")
     Mono<RelationshipDBDTO> deleteFriendship(String myId, String otherId);
+
+    /** DETACH DELETE: the user's relationships go with it. A missing user matches nothing. */
+    @Query("MATCH (u:User {userId: $userId}) DETACH DELETE u")
+    Mono<Void> deleteUser(String userId);
 }
