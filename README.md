@@ -2,7 +2,7 @@
 
 Service du **graphe social** de la plateforme [Wely Calendar](https://github.com/WelyLabs/wely-platform) : demandes d'amis, amitiés, statuts relationnels.
 
-C'est le seul service à persistance orientée graphe, et le consommateur de l'événement `USER_CREATED` produit par `wely-users`.
+C'est le seul service à persistance orientée graphe, et le consommateur des événements `USER_CREATED` et `USER_DELETED` produits par `wely-users`.
 
 ---
 
@@ -13,7 +13,7 @@ C'est le seul service à persistance orientée graphe, et le consommateur de l'�
 | **Port** | 8083 |
 | **Préfixe** | `/social-service` (exposé via la gateway sur `/api/v1/social-service/**`) |
 | **Base** | Neo4j (driver réactif) |
-| **Consomme** | `USER_CREATED` sur Kafka |
+| **Consomme** | `USER_CREATED` et `USER_DELETED` sur Kafka |
 
 ---
 
@@ -151,7 +151,7 @@ On n'ajoute pas un ami par UUID mais par son tag public `Pseudo#1234` — l'UUID
 
 ---
 
-## Événement consommé
+## Événements consommés
 
 **Topic** `USER_CREATED` · groupe `social-service-group`
 
@@ -160,6 +160,14 @@ On n'ajoute pas un ami par UUID mais par son tag public `Pseudo#1234` — l'UUID
 ```
 
 À réception, le service crée le nœud `(:User)` correspondant. C'est ce qui maintient le graphe cohérent avec PostgreSQL sans que `wely-users` ait à connaître ce service.
+
+**Topic** `USER_DELETED` · groupe `social-service-group`
+
+```json
+{ "userId": "…" }
+```
+
+Envoyé quand `wely-users` supprime un utilisateur laissé par une inscription que Keycloak a annulée. Le service supprime le nœud et toutes ses relations (`DETACH DELETE`). Supprimer un utilisateur absent n'est pas une erreur : l'événement peut être rejoué.
 
 ---
 

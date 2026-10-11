@@ -275,4 +275,30 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         // just as happily on an empty list — which is the failure this is meant to catch.
         assertThat(all).extracting(UserSocialDTO::userId).containsExactlyInAnyOrder(BOB, CAROL);
     }
+
+    @Test
+    @DisplayName("deleting a user removes its node and its relationships, and leaves the others alone")
+    void delete_shouldDetachDeleteTheNode() {
+        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.acceptFriendRequest(BOB, ALICE).block();
+
+        adapter.delete(ALICE).block();
+
+        Long users = neo4jClient.query("MATCH (u:User) RETURN count(u) AS c")
+                .fetchAs(Long.class).mappedBy((t, r) -> r.get("c").asLong()).one().block();
+        Long relationships = neo4jClient.query("MATCH ()-[r]-() RETURN count(r) AS c")
+                .fetchAs(Long.class).mappedBy((t, r) -> r.get("c").asLong()).one().block();
+        assertThat(users).isEqualTo(2);
+        assertThat(relationships).isZero();
+        assertThat(adapter.findAllFriends(BOB).collectList().block()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("deleting a user that does not exist is not an error: USER_DELETED can be replayed")
+    void delete_shouldBeIdempotent() {
+        adapter.delete("nobody").block();
+        adapter.delete(ALICE).block();
+
+        StepVerifier.create(adapter.delete(ALICE)).verifyComplete();
+    }
 }

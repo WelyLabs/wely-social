@@ -234,4 +234,13 @@ class Neo4jRelationshipRepositoryAdapterTest {
                 .expectError(BusinessException.class)
                 .verify();
     }
+
+    @Test
+    void delete_shouldDetachDeleteTheUserNode() {
+        when(userNodeRepository.deleteUser("id1")).thenReturn(Mono.empty());
+
+        StepVerifier.create(adapter.delete("id1")).verifyComplete();
+
+        org.mockito.Mockito.verify(userNodeRepository).deleteUser("id1");
+    }
 }

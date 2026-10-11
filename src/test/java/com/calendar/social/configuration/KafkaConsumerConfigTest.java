@@ -1,6 +1,7 @@
 package com.calendar.social.configuration;
 
 import com.calendar.social.domain.models.UserCreatedEventDTO;
+import com.calendar.social.domain.models.UserDeletedEventDTO;
 import com.calendar.social.domain.services.RelationshipService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -91,5 +92,32 @@ class KafkaConsumerConfigTest {
         config.userCreated().accept(Flux.empty());
 
         verify(relationshipService, times(0)).writeUser(any());
+    }
+
+    @Test
+    void userDeleted_shouldRemoveEachUserFromTheGraph() {
+        when(relationshipService.removeUser(any())).thenReturn(Mono.empty());
+
+        config.userDeleted().accept(Flux.just(
+                MessageBuilder.withPayload(new UserDeletedEventDTO("u1")).build(),
+                MessageBuilder.withPayload(new UserDeletedEventDTO("u2")).build()));
+
+        await().atMost(Duration.ofSeconds(2)).untilAsserted(() ->
+                verify(relationshipService, times(2)).removeUser(any()));
+    }
+
+    @Test
+    @DisplayName("a failing deletion does not cancel the stream either")
+    void userDeleted_shouldKeepConsumingAfterAPermanentFailure() {
+        when(relationshipService.removeUser(any()))
+                .thenReturn(Mono.error(new IllegalStateException("boom")))
+                .thenReturn(Mono.empty());
+
+        config.userDeleted().accept(Flux.just(
+                MessageBuilder.withPayload(new UserDeletedEventDTO("fails")).build(),
+                MessageBuilder.withPayload(new UserDeletedEventDTO("succeeds")).build()));
+
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                verify(relationshipService, times(2)).removeUser(any()));
     }
 }

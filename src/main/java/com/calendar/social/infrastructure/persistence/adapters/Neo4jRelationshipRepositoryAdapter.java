@@ -47,6 +47,11 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
     }
 
     @Override
+    public Mono<Void> delete(String userId) {
+        return userNodeRepository.deleteUser(userId);
+    }
+
+    @Override
     public Flux<UserSocialDTO> findAllWithSocialStatus(String userId) {
         return userNodeRepository.findAllWithSocialStatus(userId).map(userNodeMapper::toUserSocialDTO);
     }
