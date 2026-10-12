@@ -18,6 +18,8 @@ import com.calendar.social.infrastructure.persistence.models.dtos.UserSocialDBDT
 import com.calendar.social.infrastructure.persistence.models.dtos.RelationshipDBDTO;
 import com.calendar.social.infrastructure.persistence.models.entities.UserNodeEntity;
 import com.calendar.social.infrastructure.persistence.repositories.UserNodeRepository;
+import com.calendar.social.infrastructure.persistence.models.dtos.FriendRequestDBDTO;
+import com.calendar.social.domain.models.FriendRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -93,8 +95,8 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void findAllWithSocialStatus_shouldReturnMappedFlux() {
-        UserSocialDBDTO dbDto = new UserSocialDBDTO("id1", "user", "avatar", "FRIENDS");
-        UserSocialDTO dto = new UserSocialDTO("id1", "user", "avatar", "FRIENDS");
+        UserSocialDBDTO dbDto = new UserSocialDBDTO("id1", "user", 1234, "avatar", "FRIENDS", null);
+        UserSocialDTO dto = new UserSocialDTO("id1", "user", 1234, "avatar", "FRIENDS", null);
         when(userNodeRepository.findAllWithSocialStatus("userId")).thenReturn(Flux.just(dbDto));
         when(userNodeMapper.toUserSocialDTO(dbDto)).thenReturn(dto);
 
@@ -129,10 +131,10 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void findOutgoingRequests_shouldReturnMappedFlux() {
-        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
-        UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
-        when(userNodeRepository.findOutgoingRequests("userId")).thenReturn(Flux.just(entity));
-        when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
+        FriendRequestDBDTO row = new FriendRequestDBDTO("id1", "user", 1234, "avatar", "event-1");
+        FriendRequest dto = new FriendRequest("id1", "user", 1234, "avatar", "event-1");
+        when(userNodeRepository.findOutgoingRequests("userId")).thenReturn(Flux.just(row));
+        when(userNodeMapper.toFriendRequest(row)).thenReturn(dto);
 
         StepVerifier.create(adapter.findOutgoingRequests("userId"))
                 .expectNext(dto)
@@ -142,10 +144,10 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void findIncomingRequests_shouldReturnMappedFlux() {
-        UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
-        UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
-        when(userNodeRepository.findIncomingRequests("userId")).thenReturn(Flux.just(entity));
-        when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
+        FriendRequestDBDTO row = new FriendRequestDBDTO("id1", "user", 1234, "avatar", null);
+        FriendRequest dto = new FriendRequest("id1", "user", 1234, "avatar", null);
+        when(userNodeRepository.findIncomingRequests("userId")).thenReturn(Flux.just(row));
+        when(userNodeMapper.toFriendRequest(row)).thenReturn(dto);
 
         StepVerifier.create(adapter.findIncomingRequests("userId"))
                 .expectNext(dto)
@@ -157,10 +159,10 @@ class Neo4jRelationshipRepositoryAdapterTest {
     void sendFriendRequest_Success() {
         UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         UserNodeDTO dto = new UserNodeDTO("id1", "user", 1234, "avatar");
-        when(userNodeRepository.sendFriendRequest("u1", "u2", 1234)).thenReturn(Mono.just(entity));
+        when(userNodeRepository.sendFriendRequest("u1", "u2", 1234, "event-1")).thenReturn(Mono.just(entity));
         when(userNodeMapper.toUserNode(entity)).thenReturn(dto);
 
-        StepVerifier.create(adapter.sendFriendRequest("u1", "u2", 1234))
+        StepVerifier.create(adapter.sendFriendRequest("u1", "u2", 1234, "event-1"))
                 .expectNext(dto)
                 .verifyComplete();
     }
@@ -168,9 +170,9 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void sendFriendRequest_shouldReturnErrorOnEmpty() {
-        when(userNodeRepository.sendFriendRequest("u1", "u2", 1234)).thenReturn(Mono.empty());
+        when(userNodeRepository.sendFriendRequest("u1", "u2", 1234, null)).thenReturn(Mono.empty());
 
-        StepVerifier.create(adapter.sendFriendRequest("u1", "u2", 1234))
+        StepVerifier.create(adapter.sendFriendRequest("u1", "u2", 1234, null))
                 .expectError(BusinessException.class)
                 .verify();
     }

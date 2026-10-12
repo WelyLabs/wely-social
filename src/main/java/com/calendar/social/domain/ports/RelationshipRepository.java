@@ -1,5 +1,6 @@
 package com.calendar.social.domain.ports;
 
+import com.calendar.social.domain.models.FriendRequest;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.RelationshipDTO;
@@ -20,11 +21,12 @@ public interface RelationshipRepository {
 
     Flux<UserNodeDTO> findAllFriends(String userId);
 
-    Flux<UserNodeDTO> findOutgoingRequests(String userId);
+    Flux<FriendRequest> findOutgoingRequests(String userId);
 
-    Flux<UserNodeDTO> findIncomingRequests(String userId);
+    Flux<FriendRequest> findIncomingRequests(String userId);
 
-    Mono<UserNodeDTO> sendFriendRequest(String userId, String targetName, Integer targetHashtag);
+    /** {@code viaEventId} is stored on the pending relationship; null when sent outside an event. */
+    Mono<UserNodeDTO> sendFriendRequest(String userId, String targetName, Integer targetHashtag, String viaEventId);
 
     Mono<UserNodeDTO> acceptFriendRequest(String userId, String senderId);
 

@@ -25,14 +25,18 @@ public class RelationshipService {
         this.relationshipRepository = relationshipRepository;
     }
 
-    public Mono<UserNodeDTO> sendFriendRequest(String userId, String rawUserTag) {
+    /**
+     * Sends a request by tag. {@code viaEventId} is context only: nothing checks that the two
+     * shared that event, since a request by tag reveals nothing more without it.
+     */
+    public Mono<UserNodeDTO> sendFriendRequest(String userId, String rawUserTag, String viaEventId) {
         UserTag target = UserTag.parse(rawUserTag);
 
         return relationshipRepository.existsByUserNameAndHashtag(target.userName(), target.hashtag())
                 .filter(Boolean::booleanValue)
                 .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.USER_DOES_NOT_EXIST)))
                 .flatMap(exists -> relationshipRepository.sendFriendRequest(
-                        userId, target.userName(), target.hashtag()));
+                        userId, target.userName(), target.hashtag(), viaEventId));
     }
 
     public Mono<UserNodeDTO> acceptFriendRequest(String userId, String senderId) {

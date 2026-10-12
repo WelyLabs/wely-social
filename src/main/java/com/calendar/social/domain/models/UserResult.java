@@ -1,3 +1,3 @@
 package com.calendar.social.domain.models;
 
-public sealed interface UserResult permits UserNodeDTO, UserSocialDTO {}
+public sealed interface UserResult permits UserNodeDTO, UserSocialDTO, FriendRequest {}

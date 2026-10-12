@@ -127,7 +127,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     void findAllWithSocialStatus_shouldDistinguishTheDirectionOfAPendingRequest() {
         // The startNode(r) branches. Getting them the wrong way round would show every
         // incoming request as one the user sent — and no mock would notice.
-        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
 
         assertThat(statusBetween(ALICE, BOB)).isEqualTo("SENT_BY_ME");
         assertThat(statusBetween(BOB, ALICE)).isEqualTo("SENT_BY_THEM");
@@ -136,7 +136,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @Test
     @DisplayName("an accepted request reads FRIENDS from both sides")
     void acceptFriendRequest_shouldMakeTheRelationshipSymmetric() {
-        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
         adapter.acceptFriendRequest(BOB, ALICE).block();
 
         assertThat(statusBetween(ALICE, BOB)).isEqualTo("FRIENDS");
@@ -146,7 +146,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @Test
     @DisplayName("only the target can accept, not the sender")
     void acceptFriendRequest_shouldIgnoreTheSenderAcceptingTheirOwnRequest() {
-        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
 
         StepVerifier.create(adapter.acceptFriendRequest(ALICE, BOB))
                 .expectError(BusinessException.class)
@@ -158,7 +158,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @Test
     @DisplayName("a rejected request stops reading as pending")
     void rejectFriendRequest_shouldClearThePendingStatus() {
-        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
         adapter.rejectFriendRequest(BOB, ALICE).block();
 
         assertThat(statusBetween(ALICE, BOB)).isEqualTo("NONE");
@@ -168,9 +168,9 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @Test
     @DisplayName("a second request to the same person creates nothing")
     void sendFriendRequest_shouldRefuseADuplicate() {
-        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
 
-        StepVerifier.create(adapter.sendFriendRequest(ALICE, "bob", 2222))
+        StepVerifier.create(adapter.sendFriendRequest(ALICE, "bob", 2222, null))
                 .expectError(BusinessException.class)
                 .verify();
 
@@ -187,9 +187,9 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     void sendFriendRequest_shouldRefuseARequestInTheOppositeDirection() {
         // NOT (me)-[:RELATIONSHIP]-(target) is undirected on purpose: answering a pending
         // request with another request would leave two edges and an undefined status.
-        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
 
-        StepVerifier.create(adapter.sendFriendRequest(BOB, "alice", 1111))
+        StepVerifier.create(adapter.sendFriendRequest(BOB, "alice", 1111, null))
                 .expectError(BusinessException.class)
                 .verify();
 
@@ -199,7 +199,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @Test
     @DisplayName("a user cannot befriend themselves")
     void sendFriendRequest_shouldRefuseSelf() {
-        StepVerifier.create(adapter.sendFriendRequest(ALICE, "alice", 1111))
+        StepVerifier.create(adapter.sendFriendRequest(ALICE, "alice", 1111, null))
                 .expectError(BusinessException.class)
                 .verify();
     }
@@ -207,9 +207,9 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @Test
     @DisplayName("the friend list holds accepted relationships only")
     void findAllFriends_shouldIgnorePendingAndRejected() {
-        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
         adapter.acceptFriendRequest(BOB, ALICE).block();
-        adapter.sendFriendRequest(ALICE, "carol", 3333).block();
+        adapter.sendFriendRequest(ALICE, "carol", 3333, null).block();
 
         StepVerifier.create(adapter.findAllFriends(ALICE)).expectNextCount(1).verifyComplete();
     }
@@ -217,11 +217,47 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @Test
     @DisplayName("outgoing and incoming requests are told apart")
     void findRequests_shouldSeparateTheTwoDirections() {
-        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
-        adapter.sendFriendRequest(CAROL, "alice", 1111).block();
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
+        adapter.sendFriendRequest(CAROL, "alice", 1111, null).block();
 
         StepVerifier.create(adapter.findOutgoingRequests(ALICE)).expectNextCount(1).verifyComplete();
         StepVerifier.create(adapter.findIncomingRequests(ALICE)).expectNextCount(1).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("a request sent from an event keeps the event, on both sides, while it is pending")
+    void sendFriendRequest_shouldKeepTheEventItWasSentFrom() {
+        adapter.sendFriendRequest(ALICE, "bob", 2222, "event-1").block();
+
+        StepVerifier.create(adapter.findOutgoingRequests(ALICE))
+                .assertNext(request -> assertThat(request.viaEventId()).isEqualTo("event-1"))
+                .verifyComplete();
+        StepVerifier.create(adapter.findIncomingRequests(BOB))
+                .assertNext(request -> {
+                    assertThat(request.userId()).isEqualTo(ALICE);
+                    assertThat(request.hashtag()).isEqualTo(1111);
+                    assertThat(request.viaEventId()).isEqualTo("event-1");
+                })
+                .verifyComplete();
+        assertThat(adapter.findAllWithSocialStatus(BOB).collectList().block())
+                .filteredOn(user -> user.userId().equals(ALICE))
+                .singleElement()
+                .satisfies(user -> {
+                    assertThat(user.viaEventId()).isEqualTo("event-1");
+                    assertThat(user.hashtag()).isEqualTo(1111);
+                });
+    }
+
+    @Test
+    @DisplayName("once accepted, the listing no longer reports the event")
+    void findAllWithSocialStatus_shouldDropTheEventOnceFriends() {
+        adapter.sendFriendRequest(ALICE, "bob", 2222, "event-1").block();
+        adapter.acceptFriendRequest(BOB, ALICE).block();
+
+        assertThat(adapter.findAllWithSocialStatus(BOB).collectList().block())
+                .filteredOn(user -> user.userId().equals(ALICE))
+                .singleElement()
+                .satisfies(user -> assertThat(user.viaEventId()).isNull());
     }
 
     @Test
@@ -231,7 +267,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         // Spring Data Neo4j cannot map onto a @RelationshipProperties class — so the DELETE ran
         // server-side and the caller still got a TechnicalException. Removing a friend worked and
         // answered 500 at the same time, and no mocked test could see it.
-        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
         adapter.acceptFriendRequest(BOB, ALICE).block();
 
         StepVerifier.create(adapter.deleteFriendship(ALICE, BOB))
@@ -244,7 +280,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @Test
     @DisplayName("removing works whichever side originally sent the request")
     void deleteFriendship_shouldBeSymmetric() {
-        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
         adapter.acceptFriendRequest(BOB, ALICE).block();
 
         StepVerifier.create(adapter.deleteFriendship(BOB, ALICE)).expectNextCount(1).verifyComplete();
@@ -282,7 +318,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @Test
     @DisplayName("deleting a user removes its node and its relationships, and leaves the others alone")
     void delete_shouldDetachDeleteTheNode() {
-        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
         adapter.acceptFriendRequest(BOB, ALICE).block();
 
         adapter.delete(ALICE).block();
@@ -306,7 +342,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     }
 
     private void friends(String sender, String target, String targetName, int targetHashtag) {
-        adapter.sendFriendRequest(sender, targetName, targetHashtag).block();
+        adapter.sendFriendRequest(sender, targetName, targetHashtag, null).block();
         adapter.acceptFriendRequest(target, sender).block();
     }
 
@@ -324,7 +360,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @Test
     @DisplayName("a pending request is not a friendship")
     void findFriendship_shouldIgnorePendingRequests() {
-        adapter.sendFriendRequest(ALICE, "bob", 2222).block();
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
 
         StepVerifier.create(adapter.findFriendship(ALICE, BOB)).verifyComplete();
     }
@@ -370,7 +406,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @DisplayName("friend summaries list only accepted friends, with their closeness")
     void findFriendSummaries_shouldListFriendsWithTheirCloseness() {
         friends(ALICE, BOB, "bob", 2222);
-        adapter.sendFriendRequest(ALICE, "carol", 3333).block();
+        adapter.sendFriendRequest(ALICE, "carol", 3333, null).block();
         adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.CLOSE, null, false, 0), 0).block();
 
         assertThat(adapter.findFriendSummaries(ALICE).collectList().block())

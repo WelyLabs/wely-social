@@ -32,7 +32,7 @@ public class RelationshipController {
                                                                    @RequestBody @Valid FriendRequestDTO friendRequestDTO) {
         String userId = jwt.getClaimAsString("businessId");
 
-        return relationshipService.sendFriendRequest(userId, friendRequestDTO.userTag())
+        return relationshipService.sendFriendRequest(userId, friendRequestDTO.userTag(), friendRequestDTO.viaEventId())
                 .flatMap(userNodeDTO -> Mono.just(ResponseEntity.created(URI.create("relationships/request")).body(userNodeDTO)));
     }
 

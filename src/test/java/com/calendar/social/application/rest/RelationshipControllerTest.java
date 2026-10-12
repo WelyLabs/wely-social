@@ -21,6 +21,8 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -58,7 +60,7 @@ class RelationshipControllerTest {
     @Test
     void sendFriendRequest_Success() {
         when(mockJwt.getClaimAsString("businessId")).thenReturn("userId");
-        when(relationshipService.sendFriendRequest(anyString(), anyString())).thenReturn(Mono.just(userNodeDTO));
+        when(relationshipService.sendFriendRequest(anyString(), anyString(), isNull())).thenReturn(Mono.just(userNodeDTO));
 
         webTestClient.post()
                 .uri("/relationships/request")
@@ -68,6 +70,33 @@ class RelationshipControllerTest {
                 .expectStatus().isCreated()
                 .expectBody(UserNodeDTO.class)
                 .isEqualTo(userNodeDTO);
+    }
+
+    @Test
+    void sendFriendRequest_shouldPassOnTheEvent_whenSentFromOne() {
+        when(mockJwt.getClaimAsString("businessId")).thenReturn("userId");
+        when(relationshipService.sendFriendRequest("userId", "target#5678", "event-1")).thenReturn(Mono.just(userNodeDTO));
+
+        webTestClient.post()
+                .uri("/relationships/request")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new FriendRequestDTO("target#5678", "event-1"))
+                .exchange()
+                .expectStatus().isCreated();
+
+        verify(relationshipService).sendFriendRequest("userId", "target#5678", "event-1");
+    }
+
+    @Test
+    void sendFriendRequest_shouldRefuse_whenTheEventIdIsTooLong() {
+        webTestClient.post()
+                .uri("/relationships/request")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new FriendRequestDTO("target#5678", "x".repeat(65)))
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        verifyNoInteractions(relationshipService);
     }
 
     @Test
