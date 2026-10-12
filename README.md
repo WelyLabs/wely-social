@@ -141,8 +141,8 @@ Préfixées par `/social-service`, exposées sur `/api/v1/social-service/**`. To
 
 | Méthode | Route | Description |
 |---|---|---|
-| `GET` | `/users?friendshipStatus=` | Liste d'utilisateurs. Sans paramètre : tous, avec leur statut relationnel. Avec `FRIENDS`, `PENDING_INCOMING` ou `PENDING_OUTGOING` : liste filtrée |
-| `POST` | `/relationships/request` | Envoie une demande d'ami par tag (`{"userTag": "theo#4271"}`) |
+| `GET` | `/users?friendshipStatus=` | Liste d'utilisateurs. Sans paramètre : tous, avec leur `hashtag`, leur statut relationnel et, pour une demande en attente, `viaEventId`. Avec `FRIENDS`, `PENDING_INCOMING` ou `PENDING_OUTGOING` : liste filtrée ; les demandes en attente portent aussi `viaEventId` |
+| `POST` | `/relationships/request` | Envoie une demande d'ami par tag (`{"userTag": "theo#4271"}`). `viaEventId`, facultatif, garde l'événement d'où part la demande, sur la relation ; il n'est pas vérifié |
 | `PUT` | `/relationships/accept/{senderId}` | Accepte une demande reçue |
 | `PUT` | `/relationships/reject/{senderId}` | Rejette une demande reçue |
 | `DELETE` | `/relationships/{friendId}` | Supprime une amitié |

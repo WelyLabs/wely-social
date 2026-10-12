@@ -1,5 +1,6 @@
 package com.calendar.social.infrastructure.persistence.adapters;
 
+import com.calendar.social.domain.models.FriendRequest;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.RelationshipDTO;
@@ -73,19 +74,20 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
     }
 
     @Override
-    public Flux<UserNodeDTO> findOutgoingRequests(String userId) {
-        return userNodeRepository.findOutgoingRequests(userId).map(userNodeMapper::toUserNode);
+    public Flux<FriendRequest> findOutgoingRequests(String userId) {
+        return userNodeRepository.findOutgoingRequests(userId).map(userNodeMapper::toFriendRequest);
     }
 
     @Override
-    public Flux<UserNodeDTO> findIncomingRequests(String userId) {
-        return userNodeRepository.findIncomingRequests(userId).map(userNodeMapper::toUserNode);
+    public Flux<FriendRequest> findIncomingRequests(String userId) {
+        return userNodeRepository.findIncomingRequests(userId).map(userNodeMapper::toFriendRequest);
     }
 
     @Override
-    public Mono<UserNodeDTO> sendFriendRequest(String userId, String targetName, Integer targetHashtag) {
+    public Mono<UserNodeDTO> sendFriendRequest(String userId, String targetName, Integer targetHashtag,
+                                               String viaEventId) {
         return userNodeRepository
-                .sendFriendRequest(userId, targetName, targetHashtag)
+                .sendFriendRequest(userId, targetName, targetHashtag, viaEventId)
                 .map(userNodeMapper::toUserNode)
                 // Empty means the Cypher matched nothing: no such user, or the two are
                 // already related.

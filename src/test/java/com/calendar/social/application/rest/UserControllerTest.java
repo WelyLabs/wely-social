@@ -1,6 +1,8 @@
 package com.calendar.social.application.rest;
 
+import com.calendar.social.domain.models.FriendRequest;
 import com.calendar.social.domain.models.UserNodeDTO;
+import com.calendar.social.domain.models.UserSocialDTO;
 import com.calendar.social.domain.services.RelationshipService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -66,5 +68,37 @@ class UserControllerTest {
                 .expectBodyList(UserNodeDTO.class)
                 .hasSize(1)
                 .contains(userNodeDTO);
+    }
+
+    @Test
+    void readAllWithSocialStatus_shouldExposeTheEventOfAPendingRequest() {
+        FriendRequest request = new FriendRequest("u2", "testuser", 1234, null, "event-1");
+        when(mockJwt.getClaimAsString("businessId")).thenReturn("userId");
+        when(relationshipService.readAllWithSocialStatus("userId", "PENDING_INCOMING")).thenReturn(Flux.just(request));
+
+        webTestClient.get()
+                .uri("/users?friendshipStatus=PENDING_INCOMING")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$[0].userId").isEqualTo("u2")
+                .jsonPath("$[0].hashtag").isEqualTo(1234)
+                .jsonPath("$[0].viaEventId").isEqualTo("event-1");
+    }
+
+    @Test
+    void readAllWithSocialStatus_shouldExposeTheHashtagAndEventInTheFullListing() {
+        UserSocialDTO user = new UserSocialDTO("u2", "testuser", 1234, null, "SENT_BY_THEM", "event-1");
+        when(mockJwt.getClaimAsString("businessId")).thenReturn("userId");
+        when(relationshipService.readAllWithSocialStatus("userId", null)).thenReturn(Flux.just(user));
+
+        webTestClient.get()
+                .uri("/users")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$[0].relationStatus").isEqualTo("SENT_BY_THEM")
+                .jsonPath("$[0].hashtag").isEqualTo(1234)
+                .jsonPath("$[0].viaEventId").isEqualTo("event-1");
     }
 }

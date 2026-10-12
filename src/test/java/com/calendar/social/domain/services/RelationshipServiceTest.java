@@ -30,40 +30,41 @@ class RelationshipServiceTest {
 
     private UserNodeDTO userNodeDTO;
     private UserSocialDTO userSocialDTO;
+    private final FriendRequest friendRequest = new FriendRequest("u2", "target", 5678, null, "event-1");
     private UserCreatedEventDTO userCreatedEventDTO;
 
     @BeforeEach
     void setUp() {
         userNodeDTO = new UserNodeDTO(UUID.randomUUID().toString(), "testuser", 1234, "avatar.png");
-        userSocialDTO = new UserSocialDTO(UUID.randomUUID().toString(), "testuser", "avatar.png", "FRIENDS");
+        userSocialDTO = new UserSocialDTO(UUID.randomUUID().toString(), "testuser", 1234, "avatar.png", "FRIENDS", null);
         userCreatedEventDTO = new UserCreatedEventDTO(UUID.randomUUID().toString(), "testuser", 1234, "avatar.png");
     }
 
     @Test
     void sendFriendRequest_Success() {
         when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(true));
-        when(relationshipRepository.sendFriendRequest(anyString(), eq("target"), eq(5678)))
+        when(relationshipRepository.sendFriendRequest(anyString(), eq("target"), eq(5678), isNull()))
                 .thenReturn(Mono.just(userNodeDTO));
 
-        StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678"))
+        StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
                 .expectNext(userNodeDTO)
                 .verifyComplete();
 
         verify(relationshipRepository).existsByUserNameAndHashtag("target", 5678);
-        verify(relationshipRepository).sendFriendRequest("senderId", "target", 5678);
+        verify(relationshipRepository).sendFriendRequest("senderId", "target", 5678, null);
     }
 
     @Test
     void sendFriendRequest_UserNotFound() {
         when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(false));
 
-        StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678"))
+        StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
                 .expectErrorMatches(throwable -> throwable instanceof BusinessException &&
                         ((BusinessException) throwable).getErrorCode() == BusinessErrorCode.USER_DOES_NOT_EXIST)
                 .verify();
 
         verify(relationshipRepository).existsByUserNameAndHashtag("target", 5678);
-        verify(relationshipRepository, never()).sendFriendRequest(anyString(), anyString(), anyInt());
+        verify(relationshipRepository, never()).sendFriendRequest(anyString(), anyString(), anyInt(), any());
     }
 
     @Test
@@ -111,20 +112,39 @@ class RelationshipServiceTest {
     }
 
     @Test
-    void readAllWithSocialStatus_PendingIncoming() {
-        when(relationshipRepository.findIncomingRequests("userId")).thenReturn(Flux.just(userNodeDTO));
+    void sendFriendRequest_shouldPassOnTheEvent_whenSentFromOne() {
+        when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(true));
+        when(relationshipRepository.sendFriendRequest("senderId", "target", 5678, "event-1"))
+                .thenReturn(Mono.just(userNodeDTO));
 
-        StepVerifier.create(relationshipService.readAllWithSocialStatus("userId", "PENDING_INCOMING"))
+        StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", "event-1"))
                 .expectNext(userNodeDTO)
                 .verifyComplete();
     }
 
     @Test
+    void sendFriendRequest_shouldRefuseAMalformedTag() {
+        StepVerifier.create(Mono.defer(() -> relationshipService.sendFriendRequest("senderId", "no-hashtag", "event-1")))
+                .expectErrorMatches(throwable -> throwable instanceof BusinessException &&
+                        ((BusinessException) throwable).getErrorCode() == BusinessErrorCode.INVALID_USER_TAG)
+                .verify();
+    }
+
+    @Test
+    void readAllWithSocialStatus_PendingIncoming() {
+        when(relationshipRepository.findIncomingRequests("userId")).thenReturn(Flux.just(friendRequest));
+
+        StepVerifier.create(relationshipService.readAllWithSocialStatus("userId", "PENDING_INCOMING"))
+                .expectNext(friendRequest)
+                .verifyComplete();
+    }
+
+    @Test
     void readAllWithSocialStatus_PendingOutgoing() {
-        when(relationshipRepository.findOutgoingRequests("userId")).thenReturn(Flux.just(userNodeDTO));
+        when(relationshipRepository.findOutgoingRequests("userId")).thenReturn(Flux.just(friendRequest));
 
         StepVerifier.create(relationshipService.readAllWithSocialStatus("userId", "PENDING_OUTGOING"))
-                .expectNext(userNodeDTO)
+                .expectNext(friendRequest)
                 .verifyComplete();
     }
 

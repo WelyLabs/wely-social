@@ -1,5 +1,7 @@
 package com.calendar.social.infrastructure.persistence.mappers;
 
+import com.calendar.social.domain.models.FriendRequest;
+import com.calendar.social.infrastructure.persistence.models.dtos.FriendRequestDBDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserSocialDTO;
@@ -39,7 +41,7 @@ class UserNodeMapperTest {
 
     @Test
     void toUserSocialDTO_shouldMapSuccess() {
-        UserSocialDBDTO dbDto = new UserSocialDBDTO("id1", "user", "avatar", "FRIENDS");
+        UserSocialDBDTO dbDto = new UserSocialDBDTO("id1", "user", 1234, "avatar", "SENT_BY_THEM", "event-1");
         UserSocialDTO dto = mapper.toUserSocialDTO(dbDto);
 
         assertNotNull(dto);
@@ -47,6 +49,8 @@ class UserNodeMapperTest {
         assertEquals(dbDto.userName(), dto.userName());
         assertEquals(dbDto.profilePicUrl(), dto.profilePicUrl());
         assertEquals(dbDto.relationStatus(), dto.relationStatus());
+        assertEquals(dbDto.hashtag(), dto.hashtag());
+        assertEquals(dbDto.viaEventId(), dto.viaEventId());
     }
 
     @Test
@@ -64,5 +68,17 @@ class UserNodeMapperTest {
         assertEquals(entity.getUserName(), dto.userName());
         assertEquals(entity.getHashtag(), dto.hashtag());
         assertEquals(entity.getProfilePicUrl(), dto.profilePicUrl());
+    }
+
+    @Test
+    void toFriendRequest_nullSource_shouldReturnNull() {
+        assertNull(mapper.toFriendRequest(null));
+    }
+
+    @Test
+    void toFriendRequest_shouldKeepTheEvent() {
+        FriendRequestDBDTO row = new FriendRequestDBDTO("id1", "user", 1234, "avatar", "event-1");
+
+        assertEquals(new FriendRequest("id1", "user", 1234, "avatar", "event-1"), mapper.toFriendRequest(row));
     }
 }
