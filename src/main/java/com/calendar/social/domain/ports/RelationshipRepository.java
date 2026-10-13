@@ -5,6 +5,7 @@ import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
+import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserSocialDTO;
 import reactor.core.publisher.Flux;
@@ -13,6 +14,9 @@ import reactor.core.publisher.Mono;
 public interface RelationshipRepository {
 
     Mono<Void> save(UserCreatedEventDTO userCreatedEventDTO);
+
+    /** Brings the user's node in line with their new profile; creates it if USER_CREATED was missed. */
+    Mono<Void> update(UserModifiedEventDTO userModifiedEventDTO);
 
     /** Removes the user and every relationship it has. Deleting a missing user is not an error. */
     Mono<Void> delete(String userId);

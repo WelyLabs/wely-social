@@ -1,5 +1,6 @@
 package com.calendar.social.infrastructure.persistence.adapters;
 
+import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
@@ -309,5 +310,17 @@ class Neo4jRelationshipRepositoryAdapterTest {
         StepVerifier.create(adapter.updateCloseness("alice", changed, 1))
                 .expectNext(written)
                 .verifyComplete();
+    }
+
+    @Test
+    void update_shouldUpsertTheNodeWithTheNewProfile() {
+        UserModifiedEventDTO renamed = new UserModifiedEventDTO("id1", "camille_d", 4321, "Cam", "Dupont", "avatar");
+        when(userNodeRepository.upsert("id1", "camille_d", 4321, "avatar"))
+                .thenReturn(Mono.just(new UserNodeEntity("id1", "camille_d", 4321, "avatar")));
+
+        StepVerifier.create(adapter.update(renamed)).verifyComplete();
+
+        verify(userNodeRepository).upsert("id1", "camille_d", 4321, "avatar");
+        verify(userNodeRepository, never()).save(any());
     }
 }
