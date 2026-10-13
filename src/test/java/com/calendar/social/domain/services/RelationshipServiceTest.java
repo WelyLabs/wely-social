@@ -1,5 +1,6 @@
 package com.calendar.social.domain.services;
 
+import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.*;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.BusinessErrorCode;
@@ -288,5 +289,15 @@ class RelationshipServiceTest {
         StepVerifier.create(relationshipService.declineCloseness("alice", "bob"))
                 .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.NO_CLOSENESS_PROPOSAL)
                 .verify();
+    }
+
+    @Test
+    void updateUser_ShouldUpdateTheUsersNode() {
+        UserModifiedEventDTO renamed = new UserModifiedEventDTO("id1", "camille_d", 4321, "Cam", "Dupont", null);
+        when(relationshipRepository.update(renamed)).thenReturn(Mono.empty());
+
+        StepVerifier.create(relationshipService.updateUser(renamed)).verifyComplete();
+
+        verify(relationshipRepository).update(renamed);
     }
 }

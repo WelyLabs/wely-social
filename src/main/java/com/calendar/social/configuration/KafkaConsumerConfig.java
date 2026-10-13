@@ -2,6 +2,7 @@ package com.calendar.social.configuration;
 
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserDeletedEventDTO;
+import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.services.RelationshipService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -16,7 +17,8 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
- * Consumes {@code USER_CREATED} and {@code USER_DELETED}: creates or removes the user's node.
+ * Consumes {@code USER_CREATED}, {@code USER_MODIFIED} and {@code USER_DELETED}: creates, updates or
+ * removes the user's node.
  *
  * <h2>Why every failure is handled here</h2>
  *
@@ -51,6 +53,12 @@ public class KafkaConsumerConfig {
     @Bean
     public Consumer<Flux<Message<UserCreatedEventDTO>>> userCreated() {
         return flux -> consume("USER_CREATED", flux, UserCreatedEventDTO::userId, relationshipService::writeUser);
+    }
+
+    /** Sent by wely-users when a user edits their profile: the whole profile, applied as an upsert. */
+    @Bean
+    public Consumer<Flux<Message<UserModifiedEventDTO>>> userModified() {
+        return flux -> consume("USER_MODIFIED", flux, UserModifiedEventDTO::userId, relationshipService::updateUser);
     }
 
     /** Sent by wely-users when it removes a user left by a cancelled registration. */

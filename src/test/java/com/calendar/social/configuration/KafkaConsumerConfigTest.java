@@ -1,5 +1,6 @@
 package com.calendar.social.configuration;
 
+import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserDeletedEventDTO;
 import com.calendar.social.domain.services.RelationshipService;
@@ -119,5 +120,29 @@ class KafkaConsumerConfigTest {
 
         await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
                 verify(relationshipService, times(2)).removeUser(any()));
+    }
+
+    @Test
+    void userModified_shouldApplyEachProfileToTheGraph() {
+        when(relationshipService.updateUser(any())).thenReturn(Mono.empty());
+        UserModifiedEventDTO renamed = new UserModifiedEventDTO("u1", "camille_d", 4321, "Cam", "Dupont", null);
+
+        config.userModified().accept(Flux.just(MessageBuilder.withPayload(renamed).build()));
+
+        await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> verify(relationshipService).updateUser(renamed));
+    }
+
+    @Test
+    @DisplayName("a failing update does not cancel the stream: the next profiles still get through")
+    void userModified_shouldKeepConsumingAfterAPermanentFailure() {
+        UserModifiedEventDTO failing = new UserModifiedEventDTO("u1", "a", 1, null, null, null);
+        UserModifiedEventDTO next = new UserModifiedEventDTO("u2", "b", 2, null, null, null);
+        when(relationshipService.updateUser(failing)).thenReturn(Mono.error(new IllegalStateException("neo4j down")));
+        when(relationshipService.updateUser(next)).thenReturn(Mono.empty());
+
+        config.userModified().accept(Flux.just(MessageBuilder.withPayload(failing).build(),
+                MessageBuilder.withPayload(next).build()));
+
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> verify(relationshipService).updateUser(next));
     }
 }

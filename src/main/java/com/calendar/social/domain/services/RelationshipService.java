@@ -5,6 +5,7 @@ import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserDeletedEventDTO;
+import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserResult;
 import com.calendar.social.domain.models.UserTag;
@@ -53,6 +54,11 @@ public class RelationshipService {
 
     public Mono<Void> writeUser(UserCreatedEventDTO userCreatedEventDTO) {
         return relationshipRepository.save(userCreatedEventDTO);
+    }
+
+    /** A renamed user is found by the new name#hashtag from now on, in requests and searches. */
+    public Mono<Void> updateUser(UserModifiedEventDTO userModifiedEventDTO) {
+        return relationshipRepository.update(userModifiedEventDTO);
     }
 
     public Mono<Void> removeUser(UserDeletedEventDTO userDeletedEventDTO) {

@@ -5,6 +5,7 @@ import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
+import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserSocialDTO;
 import com.calendar.social.domain.ports.RelationshipRepository;
@@ -48,6 +49,14 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
 
     @Override
     public Mono<Void> save(UserCreatedEventDTO event) {
+        return userNodeRepository
+                .upsert(event.userId(), event.userName(), event.hashtag(), event.profilePicUrl())
+                .then();
+    }
+
+    /** The same MERGE as {@link #save}: idempotent, and it heals a node USER_CREATED never made. */
+    @Override
+    public Mono<Void> update(UserModifiedEventDTO event) {
         return userNodeRepository
                 .upsert(event.userId(), event.userName(), event.hashtag(), event.profilePicUrl())
                 .then();
