@@ -3,6 +3,7 @@ package com.calendar.social.infrastructure.persistence.adapters;
 import com.calendar.social.domain.models.FriendRequest;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
+import com.calendar.social.domain.models.Person;
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserModifiedEventDTO;
@@ -151,5 +152,20 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
                         changed.proposal() == null ? null : changed.proposal().name(),
                         proposedBy, expectedVersion)
                 .map(friendshipMapper::toFriendship);
+    }
+
+    @Override
+    public Mono<Boolean> existsById(String userId) {
+        return userNodeRepository.existsById(userId);
+    }
+
+    @Override
+    public Mono<Person> findPerson(String userId, String personId) {
+        return userNodeRepository.findPerson(userId, personId).map(userNodeMapper::toPerson);
+    }
+
+    @Override
+    public Flux<UserNodeDTO> findMutualFriends(String userId, String otherId, int limit) {
+        return userNodeRepository.findMutualFriends(userId, otherId, limit).map(userNodeMapper::toUserNode);
     }
 }

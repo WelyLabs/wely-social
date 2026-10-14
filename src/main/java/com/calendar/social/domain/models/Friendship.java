@@ -3,6 +3,8 @@ package com.calendar.social.domain.models;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
 
+import java.time.Instant;
+
 /**
  * An accepted friendship as one side sees it.
  *
@@ -11,13 +13,15 @@ import com.calendar.social.exception.BusinessException;
  * @param proposal         a higher level one side asked for and the other has not answered yet, or null
  * @param proposedByFriend whether that proposal comes from the other side
  * @param version          bumped on every change, so two concurrent changes cannot both apply
+ * @param since            when the friendship was accepted
  */
 public record Friendship(
         String friendId,
         Closeness closeness,
         Closeness proposal,
         boolean proposedByFriend,
-        long version
+        long version,
+        Instant since
 ) {
 
     /**
@@ -35,7 +39,7 @@ public record Friendship(
         if (proposedByFriend && proposal == target) {
             return agreedOn(target);
         }
-        return new Friendship(friendId, closeness, target, false, version);
+        return new Friendship(friendId, closeness, target, false, version, since);
     }
 
     public Friendship acceptProposal() {
@@ -49,7 +53,7 @@ public record Friendship(
     }
 
     private Friendship agreedOn(Closeness level) {
-        return new Friendship(friendId, level, null, false, version);
+        return new Friendship(friendId, level, null, false, version, since);
     }
 
     private void requireProposalFromFriend() {

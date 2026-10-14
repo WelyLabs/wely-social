@@ -80,12 +80,14 @@ class FriendshipControllerTest {
     @Test
     void findFriendship_shouldReturnTheLevelWithoutTheVersion() {
         when(relationshipService.findFriendship("alice", "bob"))
-                .thenReturn(Mono.just(new Friendship("bob", Closeness.INTIMATE, null, false, 5)));
+                .thenReturn(Mono.just(new Friendship("bob", Closeness.INTIMATE, null, false, 5,
+                        java.time.Instant.parse("2025-01-02T03:04:05Z"))));
 
         client.get().uri("/relationships/bob").exchange()
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.friendId").isEqualTo("bob")
+                .jsonPath("$.since").isEqualTo("2025-01-02T03:04:05Z")
                 .jsonPath("$.closeness").isEqualTo("INTIMATE")
                 .jsonPath("$.version").doesNotExist();
     }
@@ -103,7 +105,7 @@ class FriendshipControllerTest {
     @Test
     void requestCloseness_shouldPassTheRequestedLevel() {
         when(relationshipService.requestCloseness("alice", "bob", Closeness.CLOSE))
-                .thenReturn(Mono.just(new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, false, 1)));
+                .thenReturn(Mono.just(new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, false, 1, null)));
 
         client.put().uri("/relationships/bob/closeness")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -141,7 +143,7 @@ class FriendshipControllerTest {
     @Test
     void acceptCloseness_shouldReturnTheAgreedLevel() {
         when(relationshipService.acceptCloseness("alice", "bob"))
-                .thenReturn(Mono.just(new Friendship("bob", Closeness.INTIMATE, null, false, 2)));
+                .thenReturn(Mono.just(new Friendship("bob", Closeness.INTIMATE, null, false, 2, null)));
 
         client.put().uri("/relationships/bob/closeness/accept").exchange()
                 .expectStatus().isOk()
@@ -161,7 +163,7 @@ class FriendshipControllerTest {
     @Test
     void declineCloseness_shouldReturnTheUnchangedLevel() {
         when(relationshipService.declineCloseness("alice", "bob"))
-                .thenReturn(Mono.just(new Friendship("bob", Closeness.FRIEND, null, false, 2)));
+                .thenReturn(Mono.just(new Friendship("bob", Closeness.FRIEND, null, false, 2, null)));
 
         client.put().uri("/relationships/bob/closeness/decline").exchange()
                 .expectStatus().isOk()

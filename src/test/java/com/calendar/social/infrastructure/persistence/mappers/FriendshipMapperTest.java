@@ -16,14 +16,14 @@ class FriendshipMapperTest {
 
     @Test
     void toFriendship_shouldParseTheLevels() {
-        Friendship friendship = mapper.toFriendship(new FriendshipDBDTO("bob", "CLOSE", "INTIMATE", true, 7L));
+        Friendship friendship = mapper.toFriendship(new FriendshipDBDTO("bob", "CLOSE", "INTIMATE", true, 7L, null));
 
-        assertThat(friendship).isEqualTo(new Friendship("bob", Closeness.CLOSE, Closeness.INTIMATE, true, 7));
+        assertThat(friendship).isEqualTo(new Friendship("bob", Closeness.CLOSE, Closeness.INTIMATE, true, 7, null));
     }
 
     @Test
     void toFriendship_shouldLeaveTheProposalNull_whenThereIsNone() {
-        Friendship friendship = mapper.toFriendship(new FriendshipDBDTO("bob", "FRIEND", null, false, 0L));
+        Friendship friendship = mapper.toFriendship(new FriendshipDBDTO("bob", "FRIEND", null, false, 0L, null));
 
         assertThat(friendship.proposal()).isNull();
     }
@@ -34,5 +34,13 @@ class FriendshipMapperTest {
                 new FriendSummaryDBDTO("bob", "bob", 2222, "/a.svg", "INTIMATE", null, false));
 
         assertThat(summary).isEqualTo(new FriendSummary("bob", "bob", 2222, "/a.svg", Closeness.INTIMATE, null, false));
+    }
+
+    @Test
+    void toFriendship_shouldKeepTheFriendshipDate() {
+        java.time.Instant since = java.time.Instant.parse("2025-01-02T03:04:05Z");
+
+        assertThat(mapper.toFriendship(new FriendshipDBDTO("bob", "FRIEND", null, false, 0L, since)).since())
+                .isEqualTo(since);
     }
 }

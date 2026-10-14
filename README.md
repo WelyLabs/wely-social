@@ -142,12 +142,14 @@ Préfixées par `/social-service`, exposées sur `/api/v1/social-service/**`. To
 | Méthode | Route | Description |
 |---|---|---|
 | `GET` | `/users?friendshipStatus=` | Liste d'utilisateurs. Sans paramètre : tous, avec leur `hashtag`, leur statut relationnel et, pour une demande en attente, `viaEventId`. Avec `FRIENDS`, `PENDING_INCOMING` ou `PENDING_OUTGOING` : liste filtrée ; les demandes en attente portent aussi `viaEventId` |
+| `GET` | `/users/{userId}` | Profil d'un utilisateur vu de l'appelant : `relationStatus` (`SELF`, `NONE`, `FRIENDS`, `SENT_BY_ME`, `SENT_BY_THEM`) et, entre amis seulement, `closeness`, `proposal`, `proposedByFriend` et `since` (date d'acceptation, à défaut de création). 404 `SCL-BUS-005` si inconnu |
+| `GET` | `/users/{userId}/mutual` | Amis communs à l'appelant et à `userId` (relations acceptées), triés par pseudo, 50 au plus. Ouvert aussi entre non-amis. 404 `SCL-BUS-005` si inconnu |
 | `POST` | `/relationships/request` | Envoie une demande d'ami par tag (`{"userTag": "theo#4271"}`). `viaEventId`, facultatif, garde l'événement d'où part la demande, sur la relation ; il n'est pas vérifié |
 | `PUT` | `/relationships/accept/{senderId}` | Accepte une demande reçue |
 | `PUT` | `/relationships/reject/{senderId}` | Rejette une demande reçue |
 | `DELETE` | `/relationships/{friendId}` | Supprime une amitié |
 | `GET` | `/relationships` | Mes amis, avec le niveau et la proposition en cours |
-| `GET` | `/relationships/{friendId}` | Une amitié vue de l'appelant (404 si pas amis). Appelée par `wely-events` |
+| `GET` | `/relationships/{friendId}` | Une amitié vue de l'appelant, avec `since` (404 si pas amis). Appelée par `wely-events` |
 | `PUT` | `/relationships/{friendId}/closeness` | Demande un niveau (`{"closeness": "CLOSE"}`) : propose s'il est plus haut, applique s'il est plus bas |
 | `PUT` | `/relationships/{friendId}/closeness/accept` | Accepte le niveau proposé par l'ami |
 | `PUT` | `/relationships/{friendId}/closeness/decline` | Refuse le niveau proposé par l'ami |

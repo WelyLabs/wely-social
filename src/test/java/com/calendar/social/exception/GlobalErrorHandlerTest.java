@@ -66,7 +66,7 @@ class GlobalErrorHandlerTest {
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(404)
                 .jsonPath("$.title").isEqualTo("User not found")
-                .jsonPath("$.detail").isEqualTo("No user matches the given handle.")
+                .jsonPath("$.detail").isEqualTo("No user matches the given handle or id.")
                 .jsonPath("$.code").isEqualTo("SCL-BUS-005")
                 .jsonPath("$.type").isEqualTo("https://welylabs.app/problems/scl-bus-005")
                 .jsonPath("$.instance").isEqualTo("/business-error")
