@@ -3,6 +3,7 @@ package com.calendar.social.domain.services;
 import com.calendar.social.domain.models.Closeness;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
+import com.calendar.social.domain.models.Person;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserDeletedEventDTO;
 import com.calendar.social.domain.models.UserModifiedEventDTO;
@@ -19,6 +20,8 @@ import java.util.Objects;
 import java.util.function.UnaryOperator;
 
 public class RelationshipService {
+
+    static final int MUTUAL_FRIENDS_LIMIT = 50;
 
     private final RelationshipRepository relationshipRepository;
 
@@ -81,6 +84,21 @@ public class RelationshipService {
     public Mono<Friendship> findFriendship(String userId, String friendId) {
         return relationshipRepository.findFriendship(userId, friendId)
                 .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.NOT_FRIENDS)));
+    }
+
+    /** Any user's profile with the caller's relationship to them; SELF for the caller's own. */
+    public Mono<Person> findPerson(String userId, String personId) {
+        return relationshipRepository.findPerson(userId, personId)
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.USER_DOES_NOT_EXIST)));
+    }
+
+    /** Open to non-friends too: seeing who you have in common helps decide. */
+    public Flux<UserNodeDTO> findMutualFriends(String userId, String otherId) {
+        return relationshipRepository.existsById(otherId)
+                .filter(Boolean::booleanValue)
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.USER_DOES_NOT_EXIST)))
+                .thenMany(Flux.defer(() ->
+                        relationshipRepository.findMutualFriends(userId, otherId, MUTUAL_FRIENDS_LIMIT)));
     }
 
     public Flux<FriendSummary> listFriendships(String userId) {

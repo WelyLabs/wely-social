@@ -3,6 +3,7 @@ package com.calendar.social.domain.ports;
 import com.calendar.social.domain.models.FriendRequest;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
+import com.calendar.social.domain.models.Person;
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserModifiedEventDTO;
@@ -50,4 +51,12 @@ public interface RelationshipRepository {
      * {@code expectedVersion} was read; empty otherwise.
      */
     Mono<Friendship> updateCloseness(String userId, Friendship changed, long expectedVersion);
+
+    Mono<Boolean> existsById(String userId);
+
+    /** {@code personId} as {@code userId} sees them; empty if no such user. */
+    Mono<Person> findPerson(String userId, String personId);
+
+    /** Accepted friends of both, sorted by userName, at most {@code limit}. */
+    Flux<UserNodeDTO> findMutualFriends(String userId, String otherId, int limit);
 }

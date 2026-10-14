@@ -1,5 +1,10 @@
 package com.calendar.social.infrastructure.persistence.mappers;
 
+import java.time.Instant;
+import com.calendar.social.infrastructure.persistence.models.dtos.PersonDBDTO;
+import com.calendar.social.domain.models.RelationStatus;
+import com.calendar.social.domain.models.Person;
+import com.calendar.social.domain.models.Closeness;
 import com.calendar.social.domain.models.FriendRequest;
 import com.calendar.social.infrastructure.persistence.models.dtos.FriendRequestDBDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
@@ -80,5 +85,30 @@ class UserNodeMapperTest {
         FriendRequestDBDTO row = new FriendRequestDBDTO("id1", "user", 1234, "avatar", "event-1");
 
         assertEquals(new FriendRequest("id1", "user", 1234, "avatar", "event-1"), mapper.toFriendRequest(row));
+    }
+
+    @Test
+    void toPerson_nullSource_shouldReturnNull() {
+        assertNull(mapper.toPerson(null));
+    }
+
+    @Test
+    void toPerson_shouldParseTheStatusAndLevels() {
+        Instant since = Instant.parse("2025-01-02T03:04:05Z");
+        PersonDBDTO row = new PersonDBDTO("id1", "user", 1234, "avatar", "FRIENDS", "CLOSE", "INTIMATE", true, since);
+
+        assertEquals(new Person("id1", "user", 1234, "avatar", RelationStatus.FRIENDS, Closeness.CLOSE,
+                Closeness.INTIMATE, true, since), mapper.toPerson(row));
+    }
+
+    @Test
+    void toPerson_shouldLeaveTheLevelsNull_whenNotFriends() {
+        PersonDBDTO row = new PersonDBDTO("id1", "user", 1234, null, "SENT_BY_ME", null, null, false, null);
+
+        Person person = mapper.toPerson(row);
+
+        assertEquals(RelationStatus.SENT_BY_ME, person.relationStatus());
+        assertNull(person.closeness());
+        assertNull(person.since());
     }
 }

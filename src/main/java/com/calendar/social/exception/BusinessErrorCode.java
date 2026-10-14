@@ -42,7 +42,7 @@ public enum BusinessErrorCode {
     USER_DOES_NOT_EXIST(
             "SCL-BUS-005",
             "User not found",
-            "No user matches the given handle.",
+            "No user matches the given handle or id.",
             HttpStatus.NOT_FOUND),
 
     INVALID_USER_TAG(

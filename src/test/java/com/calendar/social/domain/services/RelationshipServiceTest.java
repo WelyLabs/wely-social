@@ -178,7 +178,7 @@ class RelationshipServiceTest {
         return ((BusinessException) error).getErrorCode();
     }
 
-    private final Friendship friends = new Friendship("bob", Closeness.FRIEND, null, false, 4);
+    private final Friendship friends = new Friendship("bob", Closeness.FRIEND, null, false, 4, null);
 
     @Test
     void findFriendship_shouldReturnTheFriendship() {
@@ -210,8 +210,8 @@ class RelationshipServiceTest {
 
     @Test
     void requestCloseness_shouldWriteTheProposalAgainstTheVersionItWasDecidedOn() {
-        Friendship proposal = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, false, 4);
-        Friendship written = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, false, 5);
+        Friendship proposal = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, false, 4, null);
+        Friendship written = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, false, 5, null);
         when(relationshipRepository.findFriendship("alice", "bob")).thenReturn(Mono.just(friends));
         when(relationshipRepository.updateCloseness("alice", proposal, 4)).thenReturn(Mono.just(written));
 
@@ -252,8 +252,8 @@ class RelationshipServiceTest {
 
     @Test
     void acceptCloseness_shouldApplyTheFriendsProposal() {
-        Friendship pending = new Friendship("bob", Closeness.FRIEND, Closeness.INTIMATE, true, 4);
-        Friendship agreed = new Friendship("bob", Closeness.INTIMATE, null, false, 4);
+        Friendship pending = new Friendship("bob", Closeness.FRIEND, Closeness.INTIMATE, true, 4, null);
+        Friendship agreed = new Friendship("bob", Closeness.INTIMATE, null, false, 4, null);
         when(relationshipRepository.findFriendship("alice", "bob")).thenReturn(Mono.just(pending));
         when(relationshipRepository.updateCloseness("alice", agreed, 4)).thenReturn(Mono.just(agreed));
 
@@ -273,7 +273,7 @@ class RelationshipServiceTest {
 
     @Test
     void declineCloseness_shouldClearTheFriendsProposal() {
-        Friendship pending = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, true, 4);
+        Friendship pending = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, true, 4, null);
         when(relationshipRepository.findFriendship("alice", "bob")).thenReturn(Mono.just(pending));
         when(relationshipRepository.updateCloseness("alice", friends, 4)).thenReturn(Mono.just(friends));
 
@@ -299,5 +299,46 @@ class RelationshipServiceTest {
         StepVerifier.create(relationshipService.updateUser(renamed)).verifyComplete();
 
         verify(relationshipRepository).update(renamed);
+    }
+
+    @Test
+    void findPerson_shouldReturnTheProfileSeenByTheCaller() {
+        Person bob = new Person("bob", "bob", 2222, null, RelationStatus.FRIENDS, Closeness.CLOSE, null, false,
+                java.time.Instant.parse("2025-01-02T03:04:05Z"));
+        when(relationshipRepository.findPerson("alice", "bob")).thenReturn(Mono.just(bob));
+
+        StepVerifier.create(relationshipService.findPerson("alice", "bob"))
+                .expectNext(bob)
+                .verifyComplete();
+    }
+
+    @Test
+    void findPerson_shouldRefuse_whenTheUserIsUnknown() {
+        when(relationshipRepository.findPerson("alice", "nobody")).thenReturn(Mono.empty());
+
+        StepVerifier.create(relationshipService.findPerson("alice", "nobody"))
+                .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.USER_DOES_NOT_EXIST)
+                .verify();
+    }
+
+    @Test
+    void findMutualFriends_shouldAskForAtMostFifty() {
+        when(relationshipRepository.existsById("bob")).thenReturn(Mono.just(true));
+        when(relationshipRepository.findMutualFriends("alice", "bob", 50)).thenReturn(Flux.just(userNodeDTO));
+
+        StepVerifier.create(relationshipService.findMutualFriends("alice", "bob"))
+                .expectNext(userNodeDTO)
+                .verifyComplete();
+    }
+
+    @Test
+    void findMutualFriends_shouldRefuse_whenTheUserIsUnknown() {
+        when(relationshipRepository.existsById("nobody")).thenReturn(Mono.just(false));
+
+        StepVerifier.create(relationshipService.findMutualFriends("alice", "nobody"))
+                .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.USER_DOES_NOT_EXIST)
+                .verify();
+
+        verify(relationshipRepository, never()).findMutualFriends(anyString(), anyString(), anyInt());
     }
 }

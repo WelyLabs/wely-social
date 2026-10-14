@@ -3,6 +3,7 @@ package com.calendar.social.infrastructure.persistence.repositories;
 import com.calendar.social.infrastructure.persistence.models.dtos.FriendRequestDBDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.FriendSummaryDBDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.FriendshipDBDTO;
+import com.calendar.social.infrastructure.persistence.models.dtos.PersonDBDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.RelationshipDBDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.UserSocialDBDTO;
 import com.calendar.social.infrastructure.persistence.models.entities.UserNodeEntity;
@@ -122,7 +123,8 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
             + "       coalesce(r.closeness, 'FRIEND') AS closeness, "
             + "       r.proposedCloseness AS proposal, "
             + "       coalesce(r.proposedBy = other.userId, false) AS proposedByFriend, "
-            + "       coalesce(r.closenessVersion, 0) AS version "
+            + "       coalesce(r.closenessVersion, 0) AS version, "
+            + "       coalesce(r.acceptedAt, r.createdAt) AS since "
             + "LIMIT 1")
     Mono<FriendshipDBDTO> findFriendship(String myId, String otherId);
 
@@ -151,7 +153,47 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
             + "       r.closeness AS closeness, "
             + "       r.proposedCloseness AS proposal, "
             + "       coalesce(r.proposedBy = other.userId, false) AS proposedByFriend, "
-            + "       r.closenessVersion AS version")
+            + "       r.closenessVersion AS version, "
+            + "       coalesce(r.acceptedAt, r.createdAt) AS since")
     Mono<FriendshipDBDTO> updateCloseness(String myId, String otherId, String closeness, String proposal,
                                           String proposedBy, Long expectedVersion);
+
+    // since: acceptedAt, or createdAt for friendships accepted before acceptedAt was written.
+
+    /**
+     * Another user and where the caller stands with them, in both directions. An accepted
+     * relationship wins over a pending one; a rejected one reads as NONE. Empty if the user is unknown.
+     */
+    @Query("MATCH (other:User {userId: $otherId}) "
+            + "OPTIONAL MATCH (me:User {userId: $myId})-[rel:RELATIONSHIP]-(other) "
+            + "WHERE rel.status IN ['ACCEPTED', 'PENDING'] "
+            + "WITH other, me, collect(rel) AS rels "
+            + "WITH other, me, head([x IN rels WHERE x.status = 'ACCEPTED'] + [x IN rels WHERE x.status = 'PENDING']) AS r "
+            + "WITH other, me, r, r.status = 'ACCEPTED' AS friends "
+            + "RETURN other.userId AS userId, "
+            + "       other.userName AS userName, "
+            + "       other.hashtag AS hashtag, "
+            + "       other.profilePicUrl AS profilePicUrl, "
+            + "       CASE "
+            + "           WHEN other.userId = $myId THEN 'SELF' "
+            + "           WHEN r IS NULL THEN 'NONE' "
+            + "           WHEN friends THEN 'FRIENDS' "
+            + "           WHEN startNode(r) = me THEN 'SENT_BY_ME' "
+            + "           ELSE 'SENT_BY_THEM' "
+            + "       END AS relationStatus, "
+            + "       CASE WHEN friends THEN coalesce(r.closeness, 'FRIEND') END AS closeness, "
+            + "       CASE WHEN friends THEN r.proposedCloseness END AS proposal, "
+            + "       coalesce(friends AND r.proposedBy = other.userId, false) AS proposedByFriend, "
+            + "       CASE WHEN friends THEN coalesce(r.acceptedAt, r.createdAt) END AS since")
+    Mono<PersonDBDTO> findPerson(String myId, String otherId);
+
+    /** Friends of both, through accepted relationships only, excluding the two themselves. */
+    @Query("MATCH (me:User {userId: $myId})-[:RELATIONSHIP {status: 'ACCEPTED'}]-(mutual:User)"
+            + "-[:RELATIONSHIP {status: 'ACCEPTED'}]-(other:User {userId: $otherId}) "
+            + "WHERE mutual <> me AND mutual <> other "
+            + "WITH DISTINCT mutual "
+            + "ORDER BY mutual.userName ASC "
+            + "LIMIT $limit "
+            + "RETURN mutual")
+    Flux<UserNodeEntity> findMutualFriends(String myId, String otherId, int limit);
 }

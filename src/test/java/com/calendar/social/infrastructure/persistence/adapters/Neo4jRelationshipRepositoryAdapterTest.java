@@ -1,5 +1,8 @@
 package com.calendar.social.infrastructure.persistence.adapters;
 
+import com.calendar.social.infrastructure.persistence.models.dtos.PersonDBDTO;
+import com.calendar.social.domain.models.RelationStatus;
+import com.calendar.social.domain.models.Person;
 import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
@@ -257,8 +260,8 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void findFriendship_shouldMapTheRow() {
-        FriendshipDBDTO row = new FriendshipDBDTO("bob", "CLOSE", null, false, 2L);
-        Friendship friendship = new Friendship("bob", Closeness.CLOSE, null, false, 2);
+        FriendshipDBDTO row = new FriendshipDBDTO("bob", "CLOSE", null, false, 2L, null);
+        Friendship friendship = new Friendship("bob", Closeness.CLOSE, null, false, 2, null);
         when(userNodeRepository.findFriendship("alice", "bob")).thenReturn(Mono.just(row));
         when(friendshipMapper.toFriendship(row)).thenReturn(friendship);
 
@@ -281,7 +284,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void updateCloseness_shouldStoreTheCallerAsProposer_whenTheProposalIsMine() {
-        Friendship changed = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, false, 1);
+        Friendship changed = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, false, 1, null);
         when(userNodeRepository.updateCloseness("alice", "bob", "FRIEND", "CLOSE", "alice", 1L)).thenReturn(Mono.empty());
 
         StepVerifier.create(adapter.updateCloseness("alice", changed, 1)).verifyComplete();
@@ -291,7 +294,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void updateCloseness_shouldStoreTheFriendAsProposer_whenTheProposalIsTheirs() {
-        Friendship changed = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, true, 1);
+        Friendship changed = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, true, 1, null);
         when(userNodeRepository.updateCloseness(any(), any(), any(), any(), any(), anyLong())).thenReturn(Mono.empty());
 
         adapter.updateCloseness("alice", changed, 1).block();
@@ -301,9 +304,9 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
     @Test
     void updateCloseness_shouldClearTheProposal_whenThereIsNone() {
-        FriendshipDBDTO row = new FriendshipDBDTO("bob", "INTIMATE", null, false, 2L);
-        Friendship changed = new Friendship("bob", Closeness.INTIMATE, null, false, 1);
-        Friendship written = new Friendship("bob", Closeness.INTIMATE, null, false, 2);
+        FriendshipDBDTO row = new FriendshipDBDTO("bob", "INTIMATE", null, false, 2L, null);
+        Friendship changed = new Friendship("bob", Closeness.INTIMATE, null, false, 1, null);
+        Friendship written = new Friendship("bob", Closeness.INTIMATE, null, false, 2, null);
         when(userNodeRepository.updateCloseness("alice", "bob", "INTIMATE", null, null, 1L)).thenReturn(Mono.just(row));
         when(friendshipMapper.toFriendship(row)).thenReturn(written);
 
@@ -322,5 +325,39 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         verify(userNodeRepository).upsert("id1", "camille_d", 4321, "avatar");
         verify(userNodeRepository, never()).save(any());
+    }
+
+    @Test
+    void existsById_shouldAskTheRepository() {
+        when(userNodeRepository.existsById("bob")).thenReturn(Mono.just(true));
+
+        StepVerifier.create(adapter.existsById("bob")).expectNext(true).verifyComplete();
+    }
+
+    @Test
+    void findPerson_shouldMapTheRow() {
+        PersonDBDTO row = new PersonDBDTO("bob", "bob", 2222, null, "NONE", null, null, false, null);
+        Person person = new Person("bob", "bob", 2222, null, RelationStatus.NONE, null, null, false, null);
+        when(userNodeRepository.findPerson("alice", "bob")).thenReturn(Mono.just(row));
+        when(userNodeMapper.toPerson(row)).thenReturn(person);
+
+        StepVerifier.create(adapter.findPerson("alice", "bob")).expectNext(person).verifyComplete();
+    }
+
+    @Test
+    void findPerson_shouldBeEmpty_whenTheUserIsUnknown() {
+        when(userNodeRepository.findPerson("alice", "nobody")).thenReturn(Mono.empty());
+
+        StepVerifier.create(adapter.findPerson("alice", "nobody")).verifyComplete();
+    }
+
+    @Test
+    void findMutualFriends_shouldPassTheLimitAndMapEachNode() {
+        UserNodeEntity carol = new UserNodeEntity("carol", "carol", 3333, null);
+        UserNodeDTO carolDto = new UserNodeDTO("carol", "carol", 3333, null);
+        when(userNodeRepository.findMutualFriends("alice", "bob", 50)).thenReturn(Flux.just(carol));
+        when(userNodeMapper.toUserNode(carol)).thenReturn(carolDto);
+
+        StepVerifier.create(adapter.findMutualFriends("alice", "bob", 50)).expectNext(carolDto).verifyComplete();
     }
 }

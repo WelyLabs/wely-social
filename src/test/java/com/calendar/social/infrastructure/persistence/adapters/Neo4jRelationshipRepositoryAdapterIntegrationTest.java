@@ -3,6 +3,9 @@ package com.calendar.social.infrastructure.persistence.adapters;
 import com.calendar.social.domain.models.Closeness;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
+import com.calendar.social.domain.models.Person;
+import com.calendar.social.domain.models.RelationStatus;
+import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.exception.BusinessException;
 import com.calendar.social.domain.models.UserSocialDTO;
@@ -20,6 +23,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import reactor.test.StepVerifier;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -341,6 +345,10 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         StepVerifier.create(adapter.delete(ALICE)).verifyComplete();
     }
 
+    private static Friendship withoutSince(Friendship f) {
+        return new Friendship(f.friendId(), f.closeness(), f.proposal(), f.proposedByFriend(), f.version(), null);
+    }
+
     private void friends(String sender, String target, String targetName, int targetHashtag) {
         adapter.sendFriendRequest(sender, targetName, targetHashtag, null).block();
         adapter.acceptFriendRequest(target, sender).block();
@@ -351,10 +359,10 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     void findFriendship_shouldDefaultToFriend() {
         friends(ALICE, BOB, "bob", 2222);
 
-        assertThat(adapter.findFriendship(ALICE, BOB).block())
-                .isEqualTo(new Friendship(BOB, Closeness.FRIEND, null, false, 0));
-        assertThat(adapter.findFriendship(BOB, ALICE).block())
-                .isEqualTo(new Friendship(ALICE, Closeness.FRIEND, null, false, 0));
+        assertThat(withoutSince(adapter.findFriendship(ALICE, BOB).block()))
+                .isEqualTo(new Friendship(BOB, Closeness.FRIEND, null, false, 0, null));
+        assertThat(withoutSince(adapter.findFriendship(BOB, ALICE).block()))
+                .isEqualTo(new Friendship(ALICE, Closeness.FRIEND, null, false, 0, null));
     }
 
     @Test
@@ -371,23 +379,23 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         friends(ALICE, BOB, "bob", 2222);
 
         Friendship written = adapter.updateCloseness(ALICE,
-                new Friendship(BOB, Closeness.FRIEND, Closeness.INTIMATE, false, 0), 0).block();
+                new Friendship(BOB, Closeness.FRIEND, Closeness.INTIMATE, false, 0, null), 0).block();
 
-        assertThat(written).isEqualTo(new Friendship(BOB, Closeness.FRIEND, Closeness.INTIMATE, false, 1));
-        assertThat(adapter.findFriendship(BOB, ALICE).block())
-                .isEqualTo(new Friendship(ALICE, Closeness.FRIEND, Closeness.INTIMATE, true, 1));
+        assertThat(withoutSince(written)).isEqualTo(new Friendship(BOB, Closeness.FRIEND, Closeness.INTIMATE, false, 1, null));
+        assertThat(withoutSince(adapter.findFriendship(BOB, ALICE).block()))
+                .isEqualTo(new Friendship(ALICE, Closeness.FRIEND, Closeness.INTIMATE, true, 1, null));
     }
 
     @Test
     @DisplayName("clearing the proposal removes it from the relationship")
     void updateCloseness_shouldClearTheProposal() {
         friends(ALICE, BOB, "bob", 2222);
-        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.FRIEND, Closeness.CLOSE, false, 0), 0).block();
+        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.FRIEND, Closeness.CLOSE, false, 0, null), 0).block();
 
-        adapter.updateCloseness(BOB, new Friendship(ALICE, Closeness.CLOSE, null, false, 1), 1).block();
+        adapter.updateCloseness(BOB, new Friendship(ALICE, Closeness.CLOSE, null, false, 1, null), 1).block();
 
-        assertThat(adapter.findFriendship(ALICE, BOB).block())
-                .isEqualTo(new Friendship(BOB, Closeness.CLOSE, null, false, 2));
+        assertThat(withoutSince(adapter.findFriendship(ALICE, BOB).block()))
+                .isEqualTo(new Friendship(BOB, Closeness.CLOSE, null, false, 2, null));
     }
 
     @Test
@@ -395,9 +403,9 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     void updateCloseness_shouldRefuseAStaleVersion() {
         // Two sides answering at once both read version 0; only the first write may land.
         friends(ALICE, BOB, "bob", 2222);
-        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.FRIEND, Closeness.CLOSE, false, 0), 0).block();
+        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.FRIEND, Closeness.CLOSE, false, 0, null), 0).block();
 
-        StepVerifier.create(adapter.updateCloseness(BOB, new Friendship(ALICE, Closeness.INTIMATE, null, false, 0), 0))
+        StepVerifier.create(adapter.updateCloseness(BOB, new Friendship(ALICE, Closeness.INTIMATE, null, false, 0, null), 0))
                 .verifyComplete();
         assertThat(adapter.findFriendship(ALICE, BOB).block().closeness()).isEqualTo(Closeness.FRIEND);
     }
@@ -407,7 +415,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     void findFriendSummaries_shouldListFriendsWithTheirCloseness() {
         friends(ALICE, BOB, "bob", 2222);
         adapter.sendFriendRequest(ALICE, "carol", 3333, null).block();
-        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.CLOSE, null, false, 0), 0).block();
+        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.CLOSE, null, false, 0, null), 0).block();
 
         assertThat(adapter.findFriendSummaries(ALICE).collectList().block())
                 .containsExactly(new FriendSummary(BOB, "bob", 2222, null, Closeness.CLOSE, null, false));
@@ -417,11 +425,195 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @DisplayName("removing a friend forgets the closeness: becoming friends again starts over")
     void deleteFriendship_shouldForgetTheCloseness() {
         friends(ALICE, BOB, "bob", 2222);
-        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.INTIMATE, null, false, 0), 0).block();
+        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.INTIMATE, null, false, 0, null), 0).block();
 
         adapter.deleteFriendship(ALICE, BOB).block();
         friends(BOB, ALICE, "alice", 1111);
 
         assertThat(adapter.findFriendship(ALICE, BOB).block().closeness()).isEqualTo(Closeness.FRIEND);
+    }
+
+    private static final Instant CREATED = Instant.parse("2024-05-06T07:08:09Z");
+    private static final Instant ACCEPTED = Instant.parse("2025-01-02T03:04:05Z");
+
+    /** Pins the relationship's dates; a null acceptedAt removes it, as on friendships older than the field. */
+    private void setDates(String a, String b, Instant createdAt, Instant acceptedAt) {
+        neo4jClient.query("MATCH (:User {userId: $a})-[r:RELATIONSHIP]-(:User {userId: $b}) "
+                        + "SET r.createdAt = datetime($createdAt), "
+                        + "    r.acceptedAt = CASE WHEN $acceptedAt IS NULL THEN null ELSE datetime($acceptedAt) END")
+                .bind(a).to("a").bind(b).to("b")
+                .bind(createdAt.toString()).to("createdAt")
+                .bind(acceptedAt == null ? null : acceptedAt.toString()).to("acceptedAt")
+                .run().block();
+    }
+
+    @Test
+    void findFriendship_shouldDateTheFriendshipFromItsAcceptance() {
+        friends(ALICE, BOB, "bob", 2222);
+        setDates(ALICE, BOB, CREATED, ACCEPTED);
+
+        assertThat(adapter.findFriendship(BOB, ALICE).block().since()).isEqualTo(ACCEPTED);
+    }
+
+    @Test
+    void findFriendship_shouldFallBackToTheCreationDate_whenAcceptedAtIsMissing() {
+        friends(ALICE, BOB, "bob", 2222);
+        setDates(ALICE, BOB, CREATED, null);
+
+        assertThat(adapter.findFriendship(ALICE, BOB).block().since()).isEqualTo(CREATED);
+    }
+
+    @Test
+    void updateCloseness_shouldReturnTheFriendshipDate() {
+        friends(ALICE, BOB, "bob", 2222);
+        setDates(ALICE, BOB, CREATED, ACCEPTED);
+
+        assertThat(adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.CLOSE, null, false, 0, null), 0)
+                .block().since()).isEqualTo(ACCEPTED);
+    }
+
+    @Test
+    void findPerson_shouldReadNone_whenNoRelationship() {
+        assertThat(adapter.findPerson(ALICE, BOB).block())
+                .isEqualTo(new Person(BOB, "bob", 2222, null, RelationStatus.NONE, null, null, false, null));
+    }
+
+    @Test
+    void findPerson_shouldTellTheDirectionOfAPendingRequest() {
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
+
+        Person seenByAlice = adapter.findPerson(ALICE, BOB).block();
+        Person seenByBob = adapter.findPerson(BOB, ALICE).block();
+
+        assertThat(seenByAlice.relationStatus()).isEqualTo(RelationStatus.SENT_BY_ME);
+        assertThat(seenByBob.relationStatus()).isEqualTo(RelationStatus.SENT_BY_THEM);
+        // Not friends yet: no level, no date.
+        assertThat(seenByBob.closeness()).isNull();
+        assertThat(seenByBob.since()).isNull();
+    }
+
+    @Test
+    void findPerson_shouldReadFriendsWithTheLevelsAndTheDate_fromBothSides() {
+        friends(ALICE, BOB, "bob", 2222);
+        setDates(ALICE, BOB, CREATED, ACCEPTED);
+        adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.CLOSE, Closeness.INTIMATE, false, 0, null), 0)
+                .block();
+
+        assertThat(adapter.findPerson(ALICE, BOB).block()).isEqualTo(new Person(
+                BOB, "bob", 2222, null, RelationStatus.FRIENDS, Closeness.CLOSE, Closeness.INTIMATE, false, ACCEPTED));
+        assertThat(adapter.findPerson(BOB, ALICE).block()).isEqualTo(new Person(
+                ALICE, "alice", 1111, null, RelationStatus.FRIENDS, Closeness.CLOSE, Closeness.INTIMATE, true, ACCEPTED));
+    }
+
+    @Test
+    void findPerson_shouldDefaultTheClosenessToFriend() {
+        friends(ALICE, BOB, "bob", 2222);
+
+        Person bob = adapter.findPerson(ALICE, BOB).block();
+
+        assertThat(bob.closeness()).isEqualTo(Closeness.FRIEND);
+        assertThat(bob.proposal()).isNull();
+        assertThat(bob.since()).isNotNull();
+    }
+
+    @Test
+    void findPerson_shouldFallBackToTheCreationDate_whenAcceptedAtIsMissing() {
+        friends(ALICE, BOB, "bob", 2222);
+        setDates(ALICE, BOB, CREATED, null);
+
+        assertThat(adapter.findPerson(ALICE, BOB).block().since()).isEqualTo(CREATED);
+    }
+
+    @Test
+    void findPerson_shouldReadNone_whenTheRequestWasRejected() {
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
+        adapter.rejectFriendRequest(BOB, ALICE).block();
+
+        assertThat(adapter.findPerson(ALICE, BOB).block().relationStatus()).isEqualTo(RelationStatus.NONE);
+        assertThat(adapter.findPerson(BOB, ALICE).block().relationStatus()).isEqualTo(RelationStatus.NONE);
+    }
+
+    @Test
+    void findPerson_shouldPreferTheAcceptedRelationship_whenSeveralExist() {
+        // The write path never creates two edges, but the read must not depend on edge order.
+        friends(ALICE, BOB, "bob", 2222);
+        neo4jClient.query("MATCH (a:User {userId: $a}), (b:User {userId: $b}) "
+                        + "CREATE (b)-[:RELATIONSHIP {status: 'PENDING', createdAt: datetime()}]->(a) "
+                        + "CREATE (b)-[:RELATIONSHIP {status: 'REJECTED', createdAt: datetime()}]->(a)")
+                .bind(ALICE).to("a").bind(BOB).to("b").run().block();
+
+        assertThat(adapter.findPerson(ALICE, BOB).block().relationStatus()).isEqualTo(RelationStatus.FRIENDS);
+    }
+
+    @Test
+    void findPerson_shouldPreferAPendingRequestOverARejectedOne() {
+        neo4jClient.query("MATCH (a:User {userId: $a}), (b:User {userId: $b}) "
+                        + "CREATE (a)-[:RELATIONSHIP {status: 'REJECTED', createdAt: datetime()}]->(b) "
+                        + "CREATE (b)-[:RELATIONSHIP {status: 'PENDING', createdAt: datetime()}]->(a)")
+                .bind(ALICE).to("a").bind(BOB).to("b").run().block();
+
+        assertThat(adapter.findPerson(ALICE, BOB).block().relationStatus()).isEqualTo(RelationStatus.SENT_BY_THEM);
+    }
+
+    @Test
+    void findPerson_shouldReadSelf_forTheCallersOwnProfile() {
+        assertThat(adapter.findPerson(ALICE, ALICE).block())
+                .isEqualTo(new Person(ALICE, "alice", 1111, null, RelationStatus.SELF, null, null, false, null));
+    }
+
+    @Test
+    void findPerson_shouldBeEmpty_whenTheUserIsUnknown() {
+        StepVerifier.create(adapter.findPerson(ALICE, "nobody")).verifyComplete();
+    }
+
+    @Test
+    void existsById_shouldTellKnownFromUnknownUsers() {
+        StepVerifier.create(adapter.existsById(BOB)).expectNext(true).verifyComplete();
+        StepVerifier.create(adapter.existsById("nobody")).expectNext(false).verifyComplete();
+    }
+
+    @Test
+    void findMutualFriends_shouldListFriendsOfBoth_inEitherDirection() {
+        friends(ALICE, CAROL, "carol", 3333);
+        friends(CAROL, BOB, "bob", 2222);
+
+        assertThat(adapter.findMutualFriends(ALICE, BOB, 50).collectList().block())
+                .containsExactly(new UserNodeDTO(CAROL, "carol", 3333, null));
+        assertThat(adapter.findMutualFriends(BOB, ALICE, 50).collectList().block())
+                .extracting(UserNodeDTO::userId).containsExactly(CAROL);
+    }
+
+    @Test
+    void findMutualFriends_shouldExcludeTheTwoPeople_whenTheyAreFriends() {
+        friends(ALICE, BOB, "bob", 2222);
+        friends(ALICE, CAROL, "carol", 3333);
+        friends(BOB, CAROL, "carol", 3333);
+
+        assertThat(adapter.findMutualFriends(ALICE, BOB, 50).collectList().block())
+                .extracting(UserNodeDTO::userId).containsExactly(CAROL);
+    }
+
+    @Test
+    void findMutualFriends_shouldIgnorePendingRelationships() {
+        friends(ALICE, CAROL, "carol", 3333);
+        adapter.sendFriendRequest(CAROL, "bob", 2222, null).block();
+
+        assertThat(adapter.findMutualFriends(ALICE, BOB, 50).collectList().block()).isEmpty();
+    }
+
+    @Test
+    void findMutualFriends_shouldSortByUserNameAndApplyTheLimit() {
+        given("dave-id", "dave", 4444);
+        given("erin-id", "erin", 5555);
+        for (String[] friend : new String[][]{{"erin-id", "erin", "5555"}, {CAROL, "carol", "3333"},
+                {"dave-id", "dave", "4444"}}) {
+            friends(ALICE, friend[0], friend[1], Integer.parseInt(friend[2]));
+            friends(BOB, friend[0], friend[1], Integer.parseInt(friend[2]));
+        }
+
+        assertThat(adapter.findMutualFriends(ALICE, BOB, 50).collectList().block())
+                .extracting(UserNodeDTO::userName).containsExactly("carol", "dave", "erin");
+        assertThat(adapter.findMutualFriends(ALICE, BOB, 2).collectList().block())
+                .extracting(UserNodeDTO::userName).containsExactly("carol", "dave");
     }
 }

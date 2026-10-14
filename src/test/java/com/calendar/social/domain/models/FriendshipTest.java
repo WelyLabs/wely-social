@@ -13,11 +13,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class FriendshipTest {
 
     private static Friendship agreed(Closeness level) {
-        return new Friendship("bob", level, null, false, 3);
+        return new Friendship("bob", level, null, false, 3, null);
     }
 
     private static Friendship proposed(Closeness level, Closeness proposal, boolean byFriend) {
-        return new Friendship("bob", level, proposal, byFriend, 3);
+        return new Friendship("bob", level, proposal, byFriend, 3, null);
     }
 
     @Test
@@ -89,5 +89,14 @@ class FriendshipTest {
         assertThatThrownBy(() -> proposed(FRIEND, CLOSE, false).declineProposal())
                 .isInstanceOfSatisfying(BusinessException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(BusinessErrorCode.NO_CLOSENESS_PROPOSAL));
+    }
+
+    @Test
+    void requestCloseness_shouldKeepTheFriendshipDate() {
+        java.time.Instant since = java.time.Instant.parse("2025-01-02T03:04:05Z");
+        Friendship friendship = new Friendship("bob", FRIEND, null, false, 3, since);
+
+        assertThat(friendship.requestCloseness(CLOSE).since()).isEqualTo(since);
+        assertThat(friendship.requestCloseness(CLOSE).requestCloseness(FRIEND).since()).isEqualTo(since);
     }
 }
