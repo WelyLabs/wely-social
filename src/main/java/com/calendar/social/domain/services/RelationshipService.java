@@ -3,6 +3,8 @@ package com.calendar.social.domain.services;
 import com.calendar.social.domain.models.Closeness;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
+import com.calendar.social.domain.models.FriendshipEvent;
+import com.calendar.social.domain.models.FriendshipEventType;
 import com.calendar.social.domain.models.Person;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserDeletedEventDTO;
@@ -10,6 +12,7 @@ import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserResult;
 import com.calendar.social.domain.models.UserTag;
+import com.calendar.social.domain.ports.FriendshipEventPublisher;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
@@ -23,10 +26,16 @@ public class RelationshipService {
 
     static final int MUTUAL_FRIENDS_LIMIT = 50;
 
-    private final RelationshipRepository relationshipRepository;
+    // JDK logger: the domain takes no logging dependency.
+    private static final System.Logger LOG = System.getLogger(RelationshipService.class.getName());
 
-    public RelationshipService(RelationshipRepository relationshipRepository) {
+    private final RelationshipRepository relationshipRepository;
+    private final FriendshipEventPublisher friendshipEventPublisher;
+
+    public RelationshipService(RelationshipRepository relationshipRepository,
+                               FriendshipEventPublisher friendshipEventPublisher) {
         this.relationshipRepository = relationshipRepository;
+        this.friendshipEventPublisher = friendshipEventPublisher;
     }
 
     /**
@@ -40,11 +49,15 @@ public class RelationshipService {
                 .filter(Boolean::booleanValue)
                 .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.USER_DOES_NOT_EXIST)))
                 .flatMap(exists -> relationshipRepository.sendFriendRequest(
-                        userId, target.userName(), target.hashtag(), viaEventId));
+                        userId, target.userName(), target.hashtag(), viaEventId))
+                .flatMap(receiver -> announce(FriendshipEventType.REQUESTED, userId, receiver.userId())
+                        .thenReturn(receiver));
     }
 
     public Mono<UserNodeDTO> acceptFriendRequest(String userId, String senderId) {
-        return relationshipRepository.acceptFriendRequest(userId, senderId);
+        return relationshipRepository.acceptFriendRequest(userId, senderId)
+                .flatMap(sender -> announce(FriendshipEventType.ACCEPTED, userId, sender.userId())
+                        .thenReturn(sender));
     }
 
     public Mono<UserNodeDTO> rejectFriendRequest(String userId, String senderId) {
@@ -115,6 +128,18 @@ public class RelationshipService {
 
     public Mono<Friendship> declineCloseness(String userId, String friendId) {
         return change(userId, friendId, Friendship::declineProposal);
+    }
+
+    /** Best effort: the friendship is already written, so a failed notification only gets logged. */
+    private Mono<Void> announce(FriendshipEventType type, String fromUserId, String toUserId) {
+        return Mono.defer(() -> relationshipRepository.findPerson(fromUserId, fromUserId))
+                .flatMap(from -> friendshipEventPublisher.publish(
+                        new FriendshipEvent(type, fromUserId, from.userName(), toUserId)))
+                .onErrorResume(error -> {
+                    LOG.log(System.Logger.Level.ERROR, "Friendship event {0} from {1} to {2} not published: {3}",
+                            type, fromUserId, toUserId, error.getMessage());
+                    return Mono.empty();
+                });
     }
 
     /** Read, decide in the domain, then write only if nobody wrote in between. */

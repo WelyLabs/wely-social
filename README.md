@@ -2,7 +2,7 @@
 
 Service du **graphe social** de la plateforme [Wely Calendar](https://github.com/WelyLabs/wely-platform) : demandes d'amis, amitiés, statuts relationnels.
 
-C'est le seul service à persistance orientée graphe, et le consommateur des événements `USER_CREATED` et `USER_DELETED` produits par `wely-users`.
+C'est le seul service à persistance orientée graphe, et le consommateur des événements `USER_CREATED` et `USER_DELETED` produits par `wely-users`. Il produit `FRIENDSHIP_CHANGED` pour le service de notifications.
 
 ---
 
@@ -14,6 +14,7 @@ C'est le seul service à persistance orientée graphe, et le consommateur des é
 | **Préfixe** | `/social-service` (exposé via la gateway sur `/api/v1/social-service/**`) |
 | **Base** | Neo4j (driver réactif) |
 | **Consomme** | `USER_CREATED` et `USER_DELETED` sur Kafka |
+| **Produit** | `FRIENDSHIP_CHANGED` sur Kafka |
 
 ---
 
@@ -197,6 +198,25 @@ On n'ajoute pas un ami par UUID mais par son tag public `Pseudo#1234` — l'UUID
 
 Envoyé quand `wely-users` supprime un utilisateur laissé par une inscription que Keycloak a annulée. Le service supprime le nœud et toutes ses relations (`DETACH DELETE`). Supprimer un utilisateur absent n'est pas une erreur : l'événement peut être rejoué.
 
+## Événements produits
+
+**Topic** `FRIENDSHIP_CHANGED` (surchargeable par `FRIENDSHIP_TOPIC`) · clé `toUserId`
+
+```json
+{ "type": "REQUESTED", "fromUserId": "…", "fromUserName": "theo", "toUserId": "…" }
+```
+
+| `type` | Signification — `toUserId` est l'utilisateur à notifier |
+|---|---|
+| `REQUESTED` | `fromUser` a envoyé une demande d'ami à `toUser` |
+| `ACCEPTED` | `fromUser` a accepté la demande que `toUser` lui avait envoyée |
+
+`fromUserName` est le pseudo seul, sans hashtag. Les changements de proximité ne sont pas publiés.
+
+Publication **au mieux** : elle a lieu après l'écriture dans Neo4j, et un échec est journalisé sans
+faire échouer la requête. Une notification peut donc se perdre si Kafka est indisponible — il n'y a
+pas d'outbox ici, contrairement à `wely-events`.
+
 ---
 
 ## Gestion des erreurs
@@ -215,6 +235,7 @@ Envoyé quand `wely-users` supprime un utilisateur laissé par une inscription q
 | `SCL-VAL-001` | 400 | Validation du corps de requête, détail par champ |
 | `SCL-REQ-000` | *repris* | Chemin inconnu, méthode non autorisée |
 | `SCL-TEC-001` | 502 | Neo4j injoignable |
+| `SCL-TEC-002` | — | Kafka injoignable — interne : la publication étant au mieux, il n'atteint jamais le client |
 
 **502 et non 500** pour l'indisponibilité du graphe : la requête était valide, c'est le magasin
 qui est tombé.
@@ -255,6 +276,7 @@ client peut tester et un `timestamp` :
 | `NEO4J_USERNAME` / `NEO4J_PASSWORD` | Identifiants Neo4j |
 | `KAFKA_BOOTSTRAP_SERVER` | Brokers Kafka |
 | `KAFKA_KEY` / `KAFKA_SECRET` | Identifiants SASL |
+| `FRIENDSHIP_TOPIC` | Topic produit, `FRIENDSHIP_CHANGED` par défaut |
 | `KEYCLOAK_ISSUER_URI` | Issuer public — validation de l'émetteur |
 | `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS interne — récupération des clés |
 

@@ -2,6 +2,7 @@ package com.calendar.social.domain.services;
 
 import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.*;
+import com.calendar.social.domain.ports.FriendshipEventPublisher;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
@@ -26,6 +27,9 @@ class RelationshipServiceTest {
     @Mock
     private RelationshipRepository relationshipRepository;
 
+    @Mock
+    private FriendshipEventPublisher friendshipEventPublisher;
+
     @InjectMocks
     private RelationshipService relationshipService;
 
@@ -46,6 +50,8 @@ class RelationshipServiceTest {
         when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(true));
         when(relationshipRepository.sendFriendRequest(anyString(), eq("target"), eq(5678), isNull()))
                 .thenReturn(Mono.just(userNodeDTO));
+        stubSelf("senderId", "sender");
+        when(friendshipEventPublisher.publish(any())).thenReturn(Mono.empty());
 
         StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
                 .expectNext(userNodeDTO)
@@ -53,6 +59,8 @@ class RelationshipServiceTest {
 
         verify(relationshipRepository).existsByUserNameAndHashtag("target", 5678);
         verify(relationshipRepository).sendFriendRequest("senderId", "target", 5678, null);
+        verify(friendshipEventPublisher).publish(
+                new FriendshipEvent(FriendshipEventType.REQUESTED, "senderId", "sender", userNodeDTO.userId()));
     }
 
     @Test
@@ -66,15 +74,85 @@ class RelationshipServiceTest {
 
         verify(relationshipRepository).existsByUserNameAndHashtag("target", 5678);
         verify(relationshipRepository, never()).sendFriendRequest(anyString(), anyString(), anyInt(), any());
+        verifyNoInteractions(friendshipEventPublisher);
     }
 
     @Test
     void acceptFriendRequest_Success() {
         when(relationshipRepository.acceptFriendRequest("userId", "senderId")).thenReturn(Mono.just(userNodeDTO));
+        stubSelf("userId", "accepter");
+        when(friendshipEventPublisher.publish(any())).thenReturn(Mono.empty());
 
         StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
                 .expectNext(userNodeDTO)
                 .verifyComplete();
+
+        verify(friendshipEventPublisher).publish(
+                new FriendshipEvent(FriendshipEventType.ACCEPTED, "userId", "accepter", userNodeDTO.userId()));
+    }
+
+    @Test
+    void acceptFriendRequest_shouldNotPublish_whenThereIsNothingToAccept() {
+        BusinessException nothing = new BusinessException(BusinessErrorCode.ACCEPT_FRIEND_REQUEST_FAILURE);
+        when(relationshipRepository.acceptFriendRequest("userId", "senderId")).thenReturn(Mono.error(nothing));
+
+        StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
+                .expectErrorMatches(e -> e == nothing)
+                .verify();
+
+        verifyNoInteractions(friendshipEventPublisher);
+    }
+
+    @Test
+    void acceptFriendRequest_shouldSucceed_whenPublishingFails() {
+        when(relationshipRepository.acceptFriendRequest("userId", "senderId")).thenReturn(Mono.just(userNodeDTO));
+        stubSelf("userId", "accepter");
+        when(friendshipEventPublisher.publish(any())).thenReturn(Mono.error(new IllegalStateException("broker down")));
+
+        StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
+                .expectNext(userNodeDTO)
+                .verifyComplete();
+    }
+
+    @Test
+    void sendFriendRequest_shouldNotPublish_whenTheRequestCannotBeCreated() {
+        BusinessException related = new BusinessException(BusinessErrorCode.SEND_FRIEND_REQUEST_FAILURE);
+        when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(true));
+        when(relationshipRepository.sendFriendRequest("senderId", "target", 5678, null)).thenReturn(Mono.error(related));
+
+        StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
+                .expectErrorMatches(e -> e == related)
+                .verify();
+
+        verifyNoInteractions(friendshipEventPublisher);
+    }
+
+    @Test
+    void sendFriendRequest_shouldSucceed_whenPublishingFails() {
+        when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(true));
+        when(relationshipRepository.sendFriendRequest("senderId", "target", 5678, null))
+                .thenReturn(Mono.just(userNodeDTO));
+        stubSelf("senderId", "sender");
+        when(friendshipEventPublisher.publish(any())).thenReturn(Mono.error(new IllegalStateException("broker down")));
+
+        StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
+                .expectNext(userNodeDTO)
+                .verifyComplete();
+    }
+
+    @Test
+    void sendFriendRequest_shouldSucceed_whenTheSendersNameCannotBeRead() {
+        when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(true));
+        when(relationshipRepository.sendFriendRequest("senderId", "target", 5678, null))
+                .thenReturn(Mono.just(userNodeDTO));
+        when(relationshipRepository.findPerson("senderId", "senderId"))
+                .thenReturn(Mono.error(new IllegalStateException("graph down")));
+
+        StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
+                .expectNext(userNodeDTO)
+                .verifyComplete();
+
+        verifyNoInteractions(friendshipEventPublisher);
     }
 
     @Test
@@ -117,6 +195,8 @@ class RelationshipServiceTest {
         when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(true));
         when(relationshipRepository.sendFriendRequest("senderId", "target", 5678, "event-1"))
                 .thenReturn(Mono.just(userNodeDTO));
+        stubSelf("senderId", "sender");
+        when(friendshipEventPublisher.publish(any())).thenReturn(Mono.empty());
 
         StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", "event-1"))
                 .expectNext(userNodeDTO)
@@ -218,6 +298,9 @@ class RelationshipServiceTest {
         StepVerifier.create(relationshipService.requestCloseness("alice", "bob", Closeness.CLOSE))
                 .expectNext(written)
                 .verifyComplete();
+
+        // Closeness changes are not friendship events.
+        verifyNoInteractions(friendshipEventPublisher);
     }
 
     @Test
@@ -340,5 +423,11 @@ class RelationshipServiceTest {
                 .verify();
 
         verify(relationshipRepository, never()).findMutualFriends(anyString(), anyString(), anyInt());
+    }
+
+    // The caller's own profile, which is where the notified name comes from.
+    private void stubSelf(String userId, String userName) {
+        when(relationshipRepository.findPerson(userId, userId)).thenReturn(Mono.just(
+                new Person(userId, userName, 1234, null, RelationStatus.SELF, null, null, false, null)));
     }
 }

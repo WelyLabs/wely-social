@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.cloud.stream.function.StreamBridge;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -39,6 +41,10 @@ class OpenApiConfigTest {
 
     @Autowired
     private ApplicationContext context;
+
+    // FunctionConfiguration is excluded above, and it is what provides StreamBridge to the Kafka publisher.
+    @MockitoBean
+    private StreamBridge streamBridge;
 
     @Value("${local.server.port}")
     private int port;

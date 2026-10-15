@@ -1,5 +1,6 @@
 package com.calendar.social.configuration;
 
+import com.calendar.social.domain.ports.FriendshipEventPublisher;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.domain.services.RelationshipService;
 import org.springframework.context.annotation.Bean;
@@ -10,7 +11,8 @@ public class SocialApplicationConfig {
 
     @Bean
     public RelationshipService relationshipService(
-            RelationshipRepository relationshipRepository) {
-        return new RelationshipService(relationshipRepository);
+            RelationshipRepository relationshipRepository,
+            FriendshipEventPublisher friendshipEventPublisher) {
+        return new RelationshipService(relationshipRepository, friendshipEventPublisher);
     }
 }

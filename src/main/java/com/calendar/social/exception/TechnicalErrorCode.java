@@ -18,6 +18,12 @@ public enum TechnicalErrorCode {
             "SCL-TEC-001",
             "Graph database unavailable",
             "The social graph could not be reached.",
+            HttpStatus.BAD_GATEWAY),
+
+    BROKER_UNAVAILABLE(
+            "SCL-TEC-002",
+            "Message broker unavailable",
+            "The event could not be sent to Kafka.",
             HttpStatus.BAD_GATEWAY);
 
     private final String code;
