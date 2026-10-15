@@ -67,7 +67,70 @@ public enum BusinessErrorCode {
             "SCL-BUS-009",
             "Friendship changed meanwhile",
             "The friendship was changed by the other side at the same time. Reload and try again.",
-            HttpStatus.CONFLICT);
+            HttpStatus.CONFLICT),
+
+    /** Also what a private community answers to a non-member: its existence is not theirs to know. */
+    COMMUNITY_NOT_FOUND(
+            "SCL-BUS-010",
+            "Community not found",
+            "No community you can see matches the given identifier.",
+            HttpStatus.NOT_FOUND),
+
+    COMMUNITY_ADMIN_REQUIRED(
+            "SCL-BUS-011",
+            "Not an admin",
+            "Only an admin of the community may do this.",
+            HttpStatus.FORBIDDEN),
+
+    COMMUNITY_INVALID(
+            "SCL-BUS-012",
+            "Invalid community",
+            "A community needs a name of 3 to 60 characters, a description of at most 500, at most 5 interests of 30 characters each, and a visibility.",
+            HttpStatus.BAD_REQUEST),
+
+    /** Unknown, already used, revoked, or meant for someone else: the four read alike on purpose. */
+    INVITATION_NOT_FOUND(
+            "SCL-BUS-013",
+            "Invitation not found",
+            "This invitation does not exist, was already used or revoked, or is meant for someone else.",
+            HttpStatus.NOT_FOUND),
+
+    INVITATION_EXPIRED(
+            "SCL-BUS-014",
+            "Invitation expired",
+            "This invitation was valid for 3 days and has expired; ask an admin of the community for a new one.",
+            HttpStatus.GONE),
+
+    INVITEE_INVALID(
+            "SCL-BUS-015",
+            "Cannot invite this person",
+            "Invite one of your friends who is not a member yet.",
+            HttpStatus.BAD_REQUEST),
+
+    COMMUNITY_LAST_MEMBER(
+            "SCL-BUS-016",
+            "Last member",
+            "You are the only member: leaving deletes the community. Confirm the deletion.",
+            HttpStatus.CONFLICT),
+
+    LAST_ADMIN(
+            "SCL-BUS-017",
+            "Last admin",
+            "A community keeps at least one admin: name another admin first.",
+            HttpStatus.CONFLICT),
+
+    MEMBER_NOT_FOUND(
+            "SCL-BUS-018",
+            "Not a member",
+            "This user is not a member of the community.",
+            HttpStatus.NOT_FOUND),
+
+    /** A public community shows its purpose to everyone, and the rest only to its members. */
+    MEMBERS_ONLY(
+            "SCL-BUS-019",
+            "Members only",
+            "Only members of the community can see this; join it first.",
+            HttpStatus.FORBIDDEN);
 
     private final String code;
     private final String title;
