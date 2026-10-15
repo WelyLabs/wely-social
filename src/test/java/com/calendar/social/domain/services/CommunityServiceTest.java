@@ -13,7 +13,10 @@ import com.calendar.social.domain.ports.CommunityRepository;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
+import com.calendar.social.exception.TechnicalErrorCode;
+import com.calendar.social.exception.TechnicalException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -26,11 +29,13 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,6 +45,7 @@ class CommunityServiceTest {
     private static final String ME = "me";
     private static final String ID = "c1";
     private static final String TOKEN = "token-abcdefghijklmnop";
+    private static final String DEMO = "demo";
 
     @Mock
     private CommunityRepository repository;
@@ -51,7 +57,8 @@ class CommunityServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CommunityService(repository, relationships, Clock.fixed(NOW, ZoneOffset.UTC), () -> TOKEN);
+        service = new CommunityService(repository, relationships, Clock.fixed(NOW, ZoneOffset.UTC), () -> TOKEN,
+                Set.of(DEMO));
     }
 
     private static Community community(CommunityVisibility visibility, CommunityRole role, long members) {
@@ -261,9 +268,9 @@ class CommunityServiceTest {
     }
 
     @Test
-    void leave_shouldRemoveAnAdmin_whenOtherAdminsRemain() {
+    void leave_shouldRemoveAnAdmin_whenOtherEligibleAdminsRemain() {
         given(community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 4));
-        when(repository.countAdmins(ID)).thenReturn(Mono.just(2L));
+        when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.just(1L));
         when(repository.removeMember(ID, ME)).thenReturn(Mono.just(true));
 
         StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.left()).verifyComplete();
@@ -273,8 +280,8 @@ class CommunityServiceTest {
     @Test
     void leave_shouldHandOverToTheLongestStandingMember_whenTheLastAdminLeaves() {
         given(community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 4));
-        when(repository.countAdmins(ID)).thenReturn(Mono.just(1L));
-        when(repository.findLongestStandingMember(ID, ME)).thenReturn(Mono.just("oldest"));
+        when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.just(0L));
+        when(repository.findLongestStandingMember(ID, Set.of(ME, DEMO))).thenReturn(Mono.just("oldest"));
         when(repository.setRole(ID, "oldest", CommunityRole.ADMIN)).thenReturn(Mono.just(true));
         when(repository.removeMember(ID, ME)).thenReturn(Mono.just(true));
 
@@ -286,12 +293,59 @@ class CommunityServiceTest {
     @Test
     void leave_shouldAnswerLastMember_whenEveryoneElseLeftMeanwhile() {
         given(community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 2));
-        when(repository.countAdmins(ID)).thenReturn(Mono.just(1L));
-        when(repository.findLongestStandingMember(ID, ME)).thenReturn(Mono.empty());
+        when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.just(0L));
+        when(repository.findLongestStandingMember(ID, Set.of(ME, DEMO))).thenReturn(Mono.empty());
 
         StepVerifier.create(service.leave(ME, ID, false))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_LAST_MEMBER))
                 .verify();
+    }
+
+    @Test
+    void leave_shouldDeleteTheCommunity_whenNoMemberCanTakeOverAndTheUserConfirms() {
+        given(community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 2));
+        when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.just(0L));
+        when(repository.findLongestStandingMember(ID, Set.of(ME, DEMO))).thenReturn(Mono.empty());
+        when(repository.delete(ID)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.leave(ME, ID, true)).expectNext(CommunityLeave.deleted()).verifyComplete();
+        verify(repository, never()).removeMember(anyString(), anyString());
+    }
+
+    @Test
+    void leave_shouldNeverHandOverToAProtectedAccount_whenTheLastAdminLeaves() {
+        given(community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 3));
+        when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.just(0L));
+        when(repository.findLongestStandingMember(ID, Set.of(ME, DEMO))).thenReturn(Mono.just("real"));
+        when(repository.setRole(ID, "real", CommunityRole.ADMIN)).thenReturn(Mono.just(true));
+        when(repository.removeMember(ID, ME)).thenReturn(Mono.just(true));
+
+        StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.handedOverTo("real")).verifyComplete();
+        verify(repository, never()).setRole(ID, DEMO, CommunityRole.ADMIN);
+    }
+
+    @Test
+    @DisplayName("a protected admin does not count as one who remains: a real member takes over")
+    void leave_shouldHandOverToARealMember_whenTheOnlyOtherAdminIsProtected() {
+        given(community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 3));
+        // The repository skips the excluded ids, so the demo admin is not counted.
+        when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.just(0L));
+        when(repository.findLongestStandingMember(ID, Set.of(ME, DEMO))).thenReturn(Mono.just("real"));
+        when(repository.setRole(ID, "real", CommunityRole.ADMIN)).thenReturn(Mono.just(true));
+        when(repository.removeMember(ID, ME)).thenReturn(Mono.just(true));
+
+        StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.handedOverTo("real")).verifyComplete();
+        verify(repository).setRole(ID, "real", CommunityRole.ADMIN);
+    }
+
+    @Test
+    void leave_shouldPropagateTheError_whenCountingAdminsFails() {
+        given(community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 3));
+        TechnicalException failure = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
+        when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.error(failure));
+
+        StepVerifier.create(service.leave(ME, ID, false)).expectErrorMatches(error -> error == failure).verify();
+        verify(repository, never()).removeMember(anyString(), anyString());
     }
 
     @Test
@@ -310,6 +364,91 @@ class CommunityServiceTest {
         when(repository.delete(ID)).thenReturn(Mono.empty());
 
         StepVerifier.create(service.leave(ME, ID, true)).expectNext(CommunityLeave.deleted()).verifyComplete();
+    }
+
+    // --- leaveOnErasure -------------------------------------------------------------------------
+
+    private static Community membership(CommunityRole role, long members) {
+        return community(CommunityVisibility.PUBLIC, role, members);
+    }
+
+    @Test
+    void leaveOnErasure_shouldDeleteTheCommunity_whenTheUserIsItsOnlyMember() {
+        when(repository.delete(ID)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.ADMIN, 1)))
+                .expectNext(CommunityLeave.deleted())
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("a plain member's membership goes with the node: nothing to write")
+    void leaveOnErasure_shouldWriteNothing_whenTheUserIsAPlainMember() {
+        StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.MEMBER, 4)))
+                .expectNext(CommunityLeave.left())
+                .verifyComplete();
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void leaveOnErasure_shouldWriteNothing_whenOtherEligibleAdminsRemain() {
+        when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.just(1L));
+
+        StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.ADMIN, 4)))
+                .expectNext(CommunityLeave.left())
+                .verifyComplete();
+        verify(repository, never()).setRole(anyString(), anyString(), any());
+        verify(repository, never()).delete(anyString());
+    }
+
+    @Test
+    void leaveOnErasure_shouldPromoteTheLongestStandingMember_whenTheUserIsTheLastAdmin() {
+        when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.just(0L));
+        when(repository.findLongestStandingMember(ID, Set.of(ME, DEMO))).thenReturn(Mono.just("oldest"));
+        when(repository.setRole(ID, "oldest", CommunityRole.ADMIN)).thenReturn(Mono.just(true));
+
+        StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.ADMIN, 4)))
+                .expectNext(CommunityLeave.handedOverTo("oldest"))
+                .verifyComplete();
+        // Never asks the erased user to confirm anything, and leaves the membership to the node's deletion.
+        verify(repository, never()).removeMember(anyString(), anyString());
+        verify(repository, never()).delete(anyString());
+    }
+
+    @Test
+    @DisplayName("the demo accounts are skipped: with only them left, the community is deleted")
+    void leaveOnErasure_shouldDeleteTheCommunity_whenNoOtherMemberCanTakeOver() {
+        when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.just(0L));
+        when(repository.findLongestStandingMember(ID, Set.of(ME, DEMO))).thenReturn(Mono.empty());
+        when(repository.delete(ID)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.ADMIN, 2)))
+                .expectNext(CommunityLeave.deleted())
+                .verifyComplete();
+        verify(repository, never()).setRole(anyString(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("a protected admin does not count as one who remains: the demo account never keeps it alone")
+    void leaveOnErasure_shouldPromoteARealMember_whenTheOnlyOtherAdminIsProtected() {
+        when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.just(0L));
+        when(repository.findLongestStandingMember(ID, Set.of(ME, DEMO))).thenReturn(Mono.just("real"));
+        when(repository.setRole(ID, "real", CommunityRole.ADMIN)).thenReturn(Mono.just(true));
+
+        StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.ADMIN, 3)))
+                .expectNext(CommunityLeave.handedOverTo("real"))
+                .verifyComplete();
+        verify(repository, never()).setRole(ID, DEMO, CommunityRole.ADMIN);
+    }
+
+    @Test
+    void leaveOnErasure_shouldPropagateTheError_whenTheGraphFails() {
+        TechnicalException failure = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
+        when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.error(failure));
+
+        StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.ADMIN, 3)))
+                .expectErrorMatches(error -> error == failure)
+                .verify();
     }
 
     // --- members --------------------------------------------------------------------------------
@@ -357,7 +496,7 @@ class CommunityServiceTest {
     void changeRole_shouldDemoteAnAdmin_whenAnotherRemains() {
         given(community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 3));
         when(repository.roleOf(ID, ME)).thenReturn(Mono.just(CommunityRole.ADMIN));
-        when(repository.countAdmins(ID)).thenReturn(Mono.just(2L));
+        when(repository.countAdmins(ID, Set.of())).thenReturn(Mono.just(2L));
         when(repository.setRole(ID, ME, CommunityRole.MEMBER)).thenReturn(Mono.just(true));
 
         StepVerifier.create(service.changeRole(ME, ID, ME, CommunityRole.MEMBER)).verifyComplete();
@@ -367,7 +506,7 @@ class CommunityServiceTest {
     void changeRole_shouldRefuseToDemoteTheLastAdmin() {
         given(community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 3));
         when(repository.roleOf(ID, ME)).thenReturn(Mono.just(CommunityRole.ADMIN));
-        when(repository.countAdmins(ID)).thenReturn(Mono.just(1L));
+        when(repository.countAdmins(ID, Set.of())).thenReturn(Mono.just(1L));
 
         StepVerifier.create(service.changeRole(ME, ID, ME, CommunityRole.MEMBER))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.LAST_ADMIN))

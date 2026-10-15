@@ -7,7 +7,6 @@ import com.calendar.social.domain.models.FriendshipEvent;
 import com.calendar.social.domain.models.FriendshipEventType;
 import com.calendar.social.domain.models.Person;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
-import com.calendar.social.domain.models.UserDeletedEventDTO;
 import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserResult;
@@ -75,10 +74,6 @@ public class RelationshipService {
     /** A renamed user is found by the new name#hashtag from now on, in requests and searches. */
     public Mono<Void> updateUser(UserModifiedEventDTO userModifiedEventDTO) {
         return relationshipRepository.update(userModifiedEventDTO);
-    }
-
-    public Mono<Void> removeUser(UserDeletedEventDTO userDeletedEventDTO) {
-        return relationshipRepository.delete(userDeletedEventDTO.userId());
     }
 
     public Flux<UserResult> readAllWithSocialStatus(String userId, String friendshipsStatus) {

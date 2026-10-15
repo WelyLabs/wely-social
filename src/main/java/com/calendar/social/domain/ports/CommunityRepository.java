@@ -9,6 +9,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.Set;
 
 /** Communities, their members and their invitations, in the social graph. */
 public interface CommunityRepository {
@@ -49,10 +50,11 @@ public interface CommunityRepository {
     /** Admins first, then by when they joined. */
     Flux<CommunityMember> findMembers(String communityId);
 
-    Mono<Long> countAdmins(String communityId);
+    /** How many admins the community has, skipping {@code excludedUserIds} and users with a deletion marker. */
+    Mono<Long> countAdmins(String communityId, Set<String> excludedUserIds);
 
-    /** The member who joined the earliest besides {@code excludedUserId}; empty when there is none. */
-    Mono<String> findLongestStandingMember(String communityId, String excludedUserId);
+    /** The earliest member to join, ties to the smallest userId, skipping the same users as countAdmins. */
+    Mono<String> findLongestStandingMember(String communityId, Set<String> excludedUserIds);
 
     /** Stores the invitation, replacing any other the invitee had to this community. */
     Mono<CommunityInvitation> saveInvitation(String communityId, String inviterId, String inviteeId,
@@ -65,4 +67,10 @@ public interface CommunityRepository {
 
     /** Whether an invitation of this community with this token was deleted. */
     Mono<Boolean> deleteInvitation(String communityId, String token);
+
+    /** Deletes every invitation the user sent, in any community; how many there were. */
+    Mono<Long> deleteInvitationsSentBy(String inviterId);
+
+    /** Deletes the communities the user created that have no member left; how many there were. */
+    Mono<Long> deleteEmptyCommunitiesCreatedBy(String creatorId);
 }

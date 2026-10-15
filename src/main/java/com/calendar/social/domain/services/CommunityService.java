@@ -16,16 +16,12 @@ import reactor.core.publisher.Mono;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.Supplier;
 
-/**
- * Communities: public ones anyone finds and joins at once, private ones nobody outside sees and
- * that are joined through an invitation.
- *
- * <p>A private community answers {@link BusinessErrorCode#COMMUNITY_NOT_FOUND} to a non-member,
- * whatever they ask, exactly as an unknown one does.
- */
+/** Communities: public ones anyone joins at once, private ones hidden from non-members and joined by invitation. */
 public class CommunityService {
 
     static final int DISCOVERY_LIMIT = 50;
@@ -34,13 +30,16 @@ public class CommunityService {
     private final RelationshipRepository relationshipRepository;
     private final Clock clock;
     private final Supplier<String> tokenGenerator;
+    // Demo accounts, reset every night: never counted as remaining admins nor promoted by a hand-over.
+    private final Set<String> protectedUserIds;
 
     public CommunityService(CommunityRepository communityRepository, RelationshipRepository relationshipRepository,
-                            Clock clock, Supplier<String> tokenGenerator) {
+                            Clock clock, Supplier<String> tokenGenerator, Set<String> protectedUserIds) {
         this.communityRepository = communityRepository;
         this.relationshipRepository = relationshipRepository;
         this.clock = clock;
         this.tokenGenerator = tokenGenerator;
+        this.protectedUserIds = Set.copyOf(protectedUserIds);
     }
 
     public Mono<Community> create(String userId, CommunityDraft draft) {
@@ -82,16 +81,7 @@ public class CommunityService {
                                 .then(Mono.defer(() -> find(userId, communityId))));
     }
 
-    /**
-     * Takes the user out of the community.
-     *
-     * <ul>
-     *   <li>Not a member: nothing changes.</li>
-     *   <li>A member, or an admin while other admins remain: removed.</li>
-     *   <li>The last admin, with other members: the member who joined the earliest becomes admin.</li>
-     *   <li>The only member: the community is deleted, only if {@code deleteIfLast} confirms it.</li>
-     * </ul>
-     */
+    /** Takes the user out, handing admin over if needed; deleting the community needs {@code deleteIfLast}. */
     public Mono<CommunityLeave> leave(String userId, String communityId, boolean deleteIfLast) {
         return find(userId, communityId).flatMap(community -> {
             if (!community.isMember()) {
@@ -105,19 +95,54 @@ public class CommunityService {
             if (!community.isAdmin()) {
                 return communityRepository.removeMember(communityId, userId).thenReturn(CommunityLeave.left());
             }
-            return communityRepository.countAdmins(communityId).flatMap(admins -> admins > 1
+            Set<String> ineligible = ineligibleAdmins(userId);
+            return communityRepository.countAdmins(communityId, ineligible).flatMap(others -> others > 0
                     ? communityRepository.removeMember(communityId, userId).thenReturn(CommunityLeave.left())
-                    : handOverAndLeave(communityId, userId));
+                    : handOverAndLeave(communityId, userId, ineligible, deleteIfLast));
         });
     }
 
-    private Mono<CommunityLeave> handOverAndLeave(String communityId, String userId) {
-        return communityRepository.findLongestStandingMember(communityId, userId)
-                .flatMap(successor -> communityRepository.setRole(communityId, successor, CommunityRole.ADMIN)
-                        .then(Mono.defer(() -> communityRepository.removeMember(communityId, userId)))
+    private Mono<CommunityLeave> handOverAndLeave(String communityId, String userId, Set<String> ineligible,
+                                                  boolean deleteIfLast) {
+        return promoteSuccessor(communityId, ineligible)
+                .flatMap(successor -> communityRepository.removeMember(communityId, userId)
                         .thenReturn(CommunityLeave.handedOverTo(successor)))
-                // Everyone else left meanwhile: the user is alone after all.
-                .switchIfEmpty(Mono.error(() -> new BusinessException(BusinessErrorCode.COMMUNITY_LAST_MEMBER)));
+                // Everyone else left meanwhile, or nobody left can take over: the user is alone after all.
+                .switchIfEmpty(Mono.defer(() -> deleteIfLast
+                        ? communityRepository.delete(communityId).thenReturn(CommunityLeave.deleted())
+                        : Mono.error(new BusinessException(BusinessErrorCode.COMMUNITY_LAST_MEMBER))));
+    }
+
+    /** Settles a deleted account's community without asking anyone; its membership goes with its node. */
+    public Mono<CommunityLeave> leaveOnErasure(String userId, Community membership) {
+        String communityId = membership.communityId();
+        if (membership.memberCount() <= 1) {
+            return communityRepository.delete(communityId).thenReturn(CommunityLeave.deleted());
+        }
+        if (!membership.isAdmin()) {
+            return Mono.just(CommunityLeave.left());
+        }
+        Set<String> ineligible = ineligibleAdmins(userId);
+        return communityRepository.countAdmins(communityId, ineligible).flatMap(others -> others > 0
+                ? Mono.just(CommunityLeave.left())
+                : promoteSuccessor(communityId, ineligible)
+                        .map(CommunityLeave::handedOverTo)
+                        .switchIfEmpty(Mono.defer(() ->
+                                communityRepository.delete(communityId).thenReturn(CommunityLeave.deleted()))));
+    }
+
+    /** The leaving user and the protected accounts, who can neither keep a community nor take it over. */
+    private Set<String> ineligibleAdmins(String leavingUserId) {
+        Set<String> ineligible = new HashSet<>(protectedUserIds);
+        ineligible.add(leavingUserId);
+        return Set.copyOf(ineligible);
+    }
+
+    /** Makes the longest-standing eligible member admin; empty when there is none. */
+    private Mono<String> promoteSuccessor(String communityId, Set<String> ineligible) {
+        return communityRepository.findLongestStandingMember(communityId, ineligible)
+                .flatMap(successor -> communityRepository.setRole(communityId, successor, CommunityRole.ADMIN)
+                        .thenReturn(successor));
     }
 
     /** Only members see who the other members are. */
@@ -138,7 +163,7 @@ public class CommunityService {
                         return Mono.empty();
                     }
                     Mono<Void> lastAdminGuard = current == CommunityRole.ADMIN
-                            ? communityRepository.countAdmins(communityId)
+                            ? communityRepository.countAdmins(communityId, Set.of())
                                     .filter(admins -> admins > 1)
                                     .switchIfEmpty(Mono.error(() -> new BusinessException(BusinessErrorCode.LAST_ADMIN)))
                                     .then()

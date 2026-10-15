@@ -23,20 +23,10 @@ import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
-/**
- * Communities in the social graph, through explicit Cypher on {@link ReactiveNeo4jClient}:
- *
- * <pre>
- *   (:User)-[:MEMBER_OF {role, joinedAt}]-&gt;(:Community)
- *   (:Community)-[:INVITED {token, inviterId, createdAt, expiresAt}]-&gt;(:User)
- * </pre>
- *
- * <p>The client rather than a repository interface: a community comes back with lists (its
- * interests, the viewer's friends among its members), which a DTO projection of Spring Data Neo4j
- * does not map. Failures are translated by {@code PersistenceErrorAspect}, like every adapter here.
- */
+/** Communities, memberships and invitations in the social graph, through Cypher on {@link ReactiveNeo4jClient}. */
 @Component
 public class Neo4jCommunityRepositoryAdapter implements CommunityRepository {
 
@@ -223,27 +213,33 @@ public class Neo4jCommunityRepositoryAdapter implements CommunityRepository {
     }
 
     @Override
-    public Mono<Long> countAdmins(String communityId) {
+    public Mono<Long> countAdmins(String communityId, Set<String> excludedUserIds) {
         return client.query("""
                         MATCH (c:Community {communityId: $communityId})
-                        RETURN COUNT { (:User)-[:MEMBER_OF {role: 'ADMIN'}]->(c) } AS admins
+                        RETURN COUNT {
+                            MATCH (u:User)-[:MEMBER_OF {role: 'ADMIN'}]->(c)
+                            WHERE NOT u.userId IN $excludedUserIds
+                              AND NOT EXISTS { MATCH (:DeletedUser {userId: u.userId}) }
+                        } AS admins
                         """)
-                .bind(communityId).to("communityId")
+                .bindAll(Map.of("communityId", communityId, "excludedUserIds", List.copyOf(excludedUserIds)))
                 .fetchAs(Long.class).mappedBy((types, row) -> row.get("admins").asLong())
                 .one()
                 .defaultIfEmpty(0L);
     }
 
+    /** The userId tie-break makes two erasures of the same user pick the same successor. */
     @Override
-    public Mono<String> findLongestStandingMember(String communityId, String excludedUserId) {
+    public Mono<String> findLongestStandingMember(String communityId, Set<String> excludedUserIds) {
         return client.query("""
                         MATCH (u:User)-[m:MEMBER_OF]->(:Community {communityId: $communityId})
-                        WHERE u.userId <> $excludedUserId
+                        WHERE NOT u.userId IN $excludedUserIds
+                          AND NOT EXISTS { MATCH (:DeletedUser {userId: u.userId}) }
                         RETURN u.userId AS userId
-                        ORDER BY m.joinedAt ASC
+                        ORDER BY m.joinedAt ASC, u.userId ASC
                         LIMIT 1
                         """)
-                .bindAll(Map.of("communityId", communityId, "excludedUserId", excludedUserId))
+                .bindAll(Map.of("communityId", communityId, "excludedUserIds", List.copyOf(excludedUserIds)))
                 .fetchAs(String.class).mappedBy((types, row) -> row.get("userId").asString())
                 .one();
     }
@@ -294,6 +290,34 @@ public class Neo4jCommunityRepositoryAdapter implements CommunityRepository {
                 .fetchAs(Boolean.class).mappedBy((types, row) -> row.get("existed").asBoolean())
                 .one()
                 .defaultIfEmpty(false);
+    }
+
+    /** inviterId is a property, not an edge: deleting the inviter's node does not reach these. */
+    @Override
+    public Mono<Long> deleteInvitationsSentBy(String inviterId) {
+        return client.query("""
+                        MATCH (:Community)-[i:INVITED {inviterId: $inviterId}]->(:User)
+                        DELETE i
+                        RETURN count(*) AS deleted
+                        """)
+                .bind(inviterId).to("inviterId")
+                .fetchAs(Long.class).mappedBy((types, row) -> row.get("deleted").asLong())
+                .one()
+                .defaultIfEmpty(0L);
+    }
+
+    @Override
+    public Mono<Long> deleteEmptyCommunitiesCreatedBy(String creatorId) {
+        return client.query("""
+                        MATCH (c:Community {createdBy: $creatorId})
+                        WHERE NOT EXISTS { MATCH (:User)-[:MEMBER_OF]->(c) }
+                        DETACH DELETE c
+                        RETURN count(*) AS deleted
+                        """)
+                .bind(creatorId).to("creatorId")
+                .fetchAs(Long.class).mappedBy((types, row) -> row.get("deleted").asLong())
+                .one()
+                .defaultIfEmpty(0L);
     }
 
     private static Map<String, Object> draftParams(CommunityDraft draft) {

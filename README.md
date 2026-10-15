@@ -2,7 +2,7 @@
 
 Service du **graphe social** de la plateforme [Wely Calendar](https://github.com/WelyLabs/wely-platform) : demandes d'amis, amitiés, statuts relationnels.
 
-C'est le seul service à persistance orientée graphe, et le consommateur des événements `USER_CREATED` et `USER_DELETED` produits par `wely-users`. Il produit `FRIENDSHIP_CHANGED` pour le service de notifications.
+It is the only service with graph persistence, and it consumes the `USER_CREATED`, `USER_MODIFIED` and `USER_DELETED` events produced by `wely-users`. It produces `FRIENDSHIP_CHANGED` for the notifications service.
 
 ---
 
@@ -13,7 +13,7 @@ C'est le seul service à persistance orientée graphe, et le consommateur des é
 | **Port** | 8083 |
 | **Préfixe** | `/social-service` (exposé via la gateway sur `/api/v1/social-service/**`) |
 | **Base** | Neo4j (driver réactif) |
-| **Consomme** | `USER_CREATED` et `USER_DELETED` sur Kafka |
+| **Consumes** | `USER_CREATED`, `USER_MODIFIED` and `USER_DELETED` on Kafka |
 | **Produit** | `FRIENDSHIP_CHANGED` sur Kafka |
 
 ---
@@ -73,6 +73,21 @@ Une seule requête renvoie la liste des utilisateurs **et** le statut relationne
 **La direction de l'arête porte du sens** : `(demandeur)-[:RELATIONSHIP]->(destinataire)`. C'est ce qui permet de distinguer une demande envoyée d'une demande reçue sans stocker de champ supplémentaire. Les requêtes de lecture d'amitié utilisent une arête **non dirigée** (`-[:RELATIONSHIP]-`), puisqu'une amitié acceptée est symétrique.
 
 Les transitions d'état sont atomiques : accepter une demande est un `SET r.status = 'ACCEPTED'` sur une arête filtrée par `{status: 'PENDING'}`, ce qui rend l'opération idempotente et interdit d'accepter une demande inexistante.
+
+### Communities
+
+Communities hang off the user nodes through two edges, queried with explicit Cypher in `Neo4jCommunityRepositoryAdapter` because a community comes back with lists that a Spring Data Neo4j projection does not map:
+
+```
+(:User)-[:MEMBER_OF {role, joinedAt}]->(:Community)
+(:Community)-[:INVITED {token, inviterId, createdAt, expiresAt}]->(:User)
+```
+
+### Deleted-account marker
+
+A deleted account leaves only a `(:DeletedUser {userId, deletedAt, erasedAt})` node, outside the `:User` label, so no user query ever sees it. It holds only the `businessId` (the pseudonym the other services keep too) and two timestamps. A uniqueness constraint `deleted_user_id` on `userId` is created at startup (`Neo4jSchemaInitializer`, in the background, retried until Neo4j answers).
+
+The marker prevents **resurrection**: the `USER_CREATED` and `USER_MODIFIED` upsert starts with `OPTIONAL MATCH (d:DeletedUser {userId: $userId}) WITH d WHERE d IS NULL`, so it never recreates a deleted account's node, even when Kafka delivers those events after `USER_DELETED` (three topics, no ordering between them).
 
 ### Niveau de proximité
 
@@ -182,6 +197,8 @@ On n'ajoute pas un ami par UUID mais par son tag public `Pseudo#1234` — l'UUID
 
 ## Événements consommés
 
+The three consumers (`UserEventsConsumer`) are `Function<Flux<Message<byte[]>>, Mono<Void>>`: the framework subscribes to the stream, never the code. Each record is read from its bytes (`RecordReader`, unknown fields ignored), retried 5 times with a backoff from 1 s capped at 30 s, then logged and skipped, so one failure never ends the stream. An unreadable record, or one without `userId`, is skipped without logging its content.
+
 **Topic** `USER_CREATED` · groupe `social-service-group`
 
 ```json
@@ -190,13 +207,36 @@ On n'ajoute pas un ami par UUID mais par son tag public `Pseudo#1234` — l'UUID
 
 À réception, le service crée le nœud `(:User)` correspondant. C'est ce qui maintient le graphe cohérent avec PostgreSQL sans que `wely-users` ait à connaître ce service.
 
-**Topic** `USER_DELETED` · groupe `social-service-group`
+**Topic** `USER_MODIFIED` · group `social-service-group`
 
 ```json
-{ "userId": "…" }
+{ "userId": "…", "userName": "theo", "hashtag": 4271, "firstName": "…", "lastName": "…", "profilePicUrl": null }
 ```
 
-Envoyé quand `wely-users` supprime un utilisateur laissé par une inscription que Keycloak a annulée. Le service supprime le nœud et toutes ses relations (`DETACH DELETE`). Supprimer un utilisateur absent n'est pas une erreur : l'événement peut être rejoué.
+The whole profile after an edit, applied by the same upsert; it recreates a node that `USER_CREATED` never made. First and last names are not stored in the graph.
+
+**Topic** `USER_DELETED` · group `social-service-group` · `start-offset=earliest`
+
+```json
+{ "userId": "…", "deletedAt": "2026-10-15T14:03:27.123Z" }
+```
+
+Sent when a user deletes their account, or when `wely-users` deletes a user left behind by a registration that Keycloak cancelled. Older records have no `deletedAt`: the processing time stands in for it.
+
+The erasure (`AccountErasureService`) runs in **one Neo4j transaction**:
+
+1. the `(:DeletedUser)` marker is created (the first `deletedAt` is kept);
+2. each community the user belongs to is handled as a departure: as its only member, it is deleted; as its last eligible admin, the longest-standing eligible member becomes admin (ties go to the smallest `userId`); if nobody can take over, it is deleted;
+3. the invitations the user sent are deleted (`inviterId` is a property, which `DETACH DELETE` does not reach);
+4. the user's node is deleted with `DETACH DELETE`: friendships, requests both ways, rejections, memberships and received invitations;
+5. the communities the user created that have no member left are deleted;
+6. `erasedAt` is set, once.
+
+Eligible means neither an already-deleted account nor a demo account (`ACCOUNT_DELETION_PROTECTED_USER_IDS`). The same rule decides whether other admins remain, so neither an erasure nor a live `leave` leaves a demo account as a community's only admin.
+
+Every step is idempotent: a replayed `USER_DELETED` changes nothing. `createdBy` stays on surviving communities, as a pseudonym that is never exposed. Nothing is published to friends: the person simply disappears from their lists.
+
+Once the node is deleted, a still-valid token can no longer write anything on the user's behalf: every write (requests, acceptances, community creation, joining, invitations) `MATCH`es the user's node.
 
 ## Événements produits
 
@@ -276,6 +316,7 @@ client peut tester et un `timestamp` :
 | `NEO4J_USERNAME` / `NEO4J_PASSWORD` | Identifiants Neo4j |
 | `KAFKA_BOOTSTRAP_SERVER` | Brokers Kafka |
 | `KAFKA_KEY` / `KAFKA_SECRET` | Identifiants SASL |
+| `ACCOUNT_DELETION_PROTECTED_USER_IDS` | Demo accounts' `businessId`s, comma-separated canonical UUIDs (any other value fails the startup): never counted as a remaining community admin nor promoted. Empty by default |
 | `FRIENDSHIP_TOPIC` | Topic produit, `FRIENDSHIP_CHANGED` par défaut |
 | `KEYCLOAK_ISSUER_URI` | Issuer public — validation de l'émetteur |
 | `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS interne — récupération des clés |
@@ -313,6 +354,6 @@ kubectl apply -k overlays/local --server-side
 ## Limites connues
 
 - **La liste d'utilisateurs n'est pas paginée.** `MATCH (other:User)` parcourt tous les nœuds, sans `SKIP`/`LIMIT` ni filtre serveur — le filtrage est fait côté client. À remplacer par une recherche paramétrée, paginée et indexée sur `(userName, hashtag)`.
-- **Le consumer Kafka souscrit lui-même au flux.** Le `.subscribe()` dans `KafkaConsumerConfig` retire au framework la gestion de l'acquittement : un échec d'écriture Neo4j perd l'événement sans trace. À remplacer par un retour du flux au framework.
+- **A lost `USER_DELETED` is not replayed.** The reactive binder acknowledges a record when it enters the stream, so a shutdown mid-erasure, or six failures in a row, lose it. The marker keeps the erasure idempotent, but nothing re-runs a missed erasure yet.
 - **Le champ `friendships` de `UserNodeEntity` est toujours vide** : il est mappé sur le type `FRIENDSHIP` alors que toutes les requêtes utilisent `RELATIONSHIP`.
 - **Pas de tests d'intégration** : les requêtes Cypher ne sont jamais exécutées contre un vrai Neo4j.

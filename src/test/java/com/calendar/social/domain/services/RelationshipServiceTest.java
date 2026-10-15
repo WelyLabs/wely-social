@@ -244,16 +244,6 @@ class RelationshipServiceTest {
                 .verifyComplete();
     }
 
-    @Test
-    void removeUser_ShouldDeleteTheUsersNode() {
-        when(relationshipRepository.delete("orphan-id")).thenReturn(Mono.empty());
-
-        StepVerifier.create(relationshipService.removeUser(new UserDeletedEventDTO("orphan-id")))
-                .verifyComplete();
-
-        verify(relationshipRepository).delete("orphan-id");
-    }
-
     private static BusinessErrorCode codeOf(Throwable error) {
         return ((BusinessException) error).getErrorCode();
     }
