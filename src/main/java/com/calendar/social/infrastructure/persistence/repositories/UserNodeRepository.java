@@ -71,14 +71,10 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
 
     Mono<Boolean> existsByUserNameAndHashtag(String userName, Integer hashtag);
 
-    /**
-     * Creates or updates the node for a user, keyed on {@code userId}.
-     *
-     * <p>Explicit MERGE rather than {@code save()}: USER_CREATED can be redelivered —
-     * Kafka is at-least-once, the consumer retries, and a consumer group can be reset —
-     * and each replay must converge on one node instead of adding another.
-     */
-    @Query("MERGE (u:User {userId: $userId}) "
+    /** Idempotent MERGE of the user's node on {@code userId}; empty for a user with a deletion marker. */
+    @Query("OPTIONAL MATCH (d:DeletedUser {userId: $userId}) "
+            + "WITH d WHERE d IS NULL "
+            + "MERGE (u:User {userId: $userId}) "
             + "SET u.userName = $userName, "
             + "    u.hashtag = $hashtag, "
             + "    u.profilePicUrl = $profilePicUrl "

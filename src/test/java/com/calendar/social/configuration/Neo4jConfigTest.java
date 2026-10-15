@@ -5,9 +5,15 @@ import org.junit.jupiter.api.Test;
 import org.neo4j.driver.Driver;
 import org.springframework.data.neo4j.core.transaction.ReactiveNeo4jTransactionManager;
 import org.springframework.transaction.ReactiveTransactionManager;
+import org.springframework.transaction.reactive.TransactionalOperator;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 class Neo4jConfigTest {
@@ -34,5 +40,17 @@ class Neo4jConfigTest {
 
         // Nothing connects at assembly: the driver is only used when queried.
         verifyNoInteractions(driver);
+    }
+
+    @Test
+    @DisplayName("the operator runs its work in a transaction of the reactive manager")
+    void transactionalOperator_shouldWrapTheReactiveTransactionManager() {
+        ReactiveTransactionManager manager = mock(ReactiveTransactionManager.class);
+        when(manager.getReactiveTransaction(any())).thenReturn(Mono.error(new IllegalStateException("no database")));
+
+        TransactionalOperator operator = config.transactionalOperator(manager);
+
+        StepVerifier.create(operator.transactional(Mono.just("work"))).verifyError(IllegalStateException.class);
+        verify(manager).getReactiveTransaction(any());
     }
 }

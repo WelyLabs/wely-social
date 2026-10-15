@@ -20,15 +20,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-/**
- * Drives the social graph through explicit Cypher.
- *
- * <p>No error handling here. Logging a failure and translating it into
- * {@code TechnicalException(DATABASE_ERROR)} used to be repeated in all ten methods; that
- * now lives in {@link com.calendar.social.infrastructure.observability.PersistenceErrorAspect},
- * which wraps each returned publisher. What stays in this class is what actually differs
- * per method: which business failure an empty result stands for.
- */
+/** Users and friendships in the social graph; failures are translated by {@code PersistenceErrorAspect}. */
 @Component
 public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepository {
 
@@ -55,7 +47,7 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
                 .then();
     }
 
-    /** The same MERGE as {@link #save}: idempotent, and it heals a node USER_CREATED never made. */
+    /** The same guarded MERGE as {@link #save}: heals a node USER_CREATED never made, never a deleted user's. */
     @Override
     public Mono<Void> update(UserModifiedEventDTO event) {
         return userNodeRepository

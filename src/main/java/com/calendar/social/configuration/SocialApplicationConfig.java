@@ -1,17 +1,27 @@
 package com.calendar.social.configuration;
 
 import com.calendar.social.domain.ports.CommunityRepository;
+import com.calendar.social.domain.ports.DeletedUserMarkers;
 import com.calendar.social.domain.ports.FriendshipEventPublisher;
 import com.calendar.social.domain.ports.RelationshipRepository;
+import com.calendar.social.domain.ports.TransactionRunner;
+import com.calendar.social.domain.services.AccountErasureService;
 import com.calendar.social.domain.services.CommunityService;
 import com.calendar.social.domain.services.RelationshipService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
+@Slf4j
 @Configuration
 public class SocialApplicationConfig {
 
@@ -25,10 +35,24 @@ public class SocialApplicationConfig {
     }
 
     @Bean
-    public CommunityService communityService(CommunityRepository communityRepository,
-                                             RelationshipRepository relationshipRepository) {
+    public CommunityService communityService(
+            CommunityRepository communityRepository,
+            RelationshipRepository relationshipRepository,
+            @Value("${app.account-deletion.protected-user-ids:}") String protectedUserIds) {
+        Set<String> protectedIds = protectedUserIds(protectedUserIds);
+        log.info("Community hand-overs skip {} protected account(s)", protectedIds.size());
         return new CommunityService(communityRepository, relationshipRepository, Clock.systemUTC(),
-                SocialApplicationConfig::invitationToken);
+                SocialApplicationConfig::invitationToken, protectedIds);
+    }
+
+    @Bean
+    public AccountErasureService accountErasureService(DeletedUserMarkers markers,
+                                                       CommunityRepository communityRepository,
+                                                       CommunityService communityService,
+                                                       RelationshipRepository relationshipRepository,
+                                                       TransactionRunner transactions) {
+        return new AccountErasureService(markers, communityRepository, communityService, relationshipRepository,
+                transactions, Clock.systemUTC());
     }
 
     /**
@@ -39,5 +63,26 @@ public class SocialApplicationConfig {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    /** Parses comma-separated canonical UUIDs into their lowercase form, failing on any other id. */
+    static Set<String> protectedUserIds(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Set.of();
+        }
+        return Arrays.stream(raw.split(","))
+                .map(String::strip)
+                .filter(id -> !id.isEmpty())
+                .map(SocialApplicationConfig::canonicalUuid)
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    private static String canonicalUuid(String id) {
+        // UUID.fromString also accepts short groups, so a truncated id would parse into another UUID.
+        String canonical = UUID.fromString(id).toString();
+        if (!canonical.equalsIgnoreCase(id)) {
+            throw new IllegalArgumentException("Protected user id is not a canonical UUID: " + id);
+        }
+        return canonical;
     }
 }

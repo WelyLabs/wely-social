@@ -14,9 +14,10 @@ import reactor.core.publisher.Mono;
 
 public interface RelationshipRepository {
 
+    /** Creates the user's node; never for a user with a deletion marker, where it completes empty. */
     Mono<Void> save(UserCreatedEventDTO userCreatedEventDTO);
 
-    /** Brings the user's node in line with their new profile; creates it if USER_CREATED was missed. */
+    /** Upserts the user's node from their new profile, even if USER_CREATED was missed, never for a deleted user. */
     Mono<Void> update(UserModifiedEventDTO userModifiedEventDTO);
 
     /** Removes the user and every relationship it has. Deleting a missing user is not an error. */

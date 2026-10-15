@@ -26,18 +26,11 @@ import reactor.test.StepVerifier;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Runs the Cypher of {@link Neo4jCommunityRepositoryAdapter} against a real Neo4j: the
- * community's view (role, member count, friends among the members), the conditional writes that
- * report whether they matched, and the invitation that replaces another. All of it lives in the
- * queries, where a mock sees nothing.
- *
- * <p>Opt-in, like {@link Neo4jRelationshipRepositoryAdapterIntegrationTest}: CI sets {@code CI=true},
- * locally pass {@code -Dintegration.tests=true}.
- */
+/** Runs the Cypher of {@link Neo4jCommunityRepositoryAdapter} on a real Neo4j, when CI or integration.tests is set. */
 @Testcontainers
 @SpringBootTest
 @ActiveProfiles("test")
@@ -66,6 +59,9 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
 
     @Autowired
     private ReactiveNeo4jClient neo4jClient;
+
+    @Autowired
+    private Neo4jDeletedUserMarkersAdapter markers;
 
     @BeforeEach
     void resetGraph() {
@@ -205,11 +201,11 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
         adapter.addMember(club.communityId(), BOB, CommunityRole.MEMBER, T0).block();
 
         assertThat(adapter.setRole(club.communityId(), BOB, CommunityRole.ADMIN).block()).isTrue();
-        assertThat(adapter.countAdmins(club.communityId()).block()).isEqualTo(2);
+        assertThat(adapter.countAdmins(club.communityId(), Set.of()).block()).isEqualTo(2);
         assertThat(adapter.setRole(club.communityId(), CAROL, CommunityRole.ADMIN).block()).isFalse();
         assertThat(adapter.removeMember(club.communityId(), BOB).block()).isTrue();
         assertThat(adapter.removeMember(club.communityId(), BOB).block()).isFalse();
-        assertThat(adapter.countAdmins("nope").block()).isZero();
+        assertThat(adapter.countAdmins("nope", Set.of()).block()).isZero();
     }
 
     @Test
@@ -224,8 +220,8 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
         assertThat(members).extracting(CommunityMember::userId).containsExactly(ALICE, BOB, CAROL);
         assertThat(members.get(0).role()).isEqualTo(CommunityRole.ADMIN);
         assertThat(members.get(1).joinedAt()).isEqualTo(T0.plus(1, ChronoUnit.DAYS));
-        assertThat(adapter.findLongestStandingMember(club.communityId(), ALICE).block()).isEqualTo(BOB);
-        StepVerifier.create(adapter.findLongestStandingMember("nope", ALICE)).verifyComplete();
+        assertThat(adapter.findLongestStandingMember(club.communityId(), Set.of(ALICE)).block()).isEqualTo(BOB);
+        StepVerifier.create(adapter.findLongestStandingMember("nope", Set.of(ALICE))).verifyComplete();
     }
 
     @Test
@@ -277,5 +273,95 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
         Long users = neo4jClient.query("MATCH (u:User) RETURN count(u) AS c")
                 .fetchAs(Long.class).mappedBy((t, r) -> r.get("c").asLong()).one().block();
         assertThat(users).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("only eligible admins count: excluded ids and admins with a deletion marker are skipped")
+    void countAdmins_shouldSkipExcludedAdminsAndDeletedOnes() {
+        Community club = create(ALICE, "Club", CommunityVisibility.PUBLIC);
+        adapter.addMember(club.communityId(), BOB, CommunityRole.ADMIN, T0.plus(1, ChronoUnit.DAYS)).block();
+        adapter.addMember(club.communityId(), CAROL, CommunityRole.ADMIN, T0.plus(2, ChronoUnit.DAYS)).block();
+
+        assertThat(adapter.countAdmins(club.communityId(), Set.of(ALICE)).block()).isEqualTo(2);
+        assertThat(adapter.countAdmins(club.communityId(), Set.of(ALICE, BOB)).block()).isEqualTo(1);
+        markers.markDeleted(CAROL, T0.plus(3, ChronoUnit.DAYS)).block();
+        assertThat(adapter.countAdmins(club.communityId(), Set.of(ALICE, BOB)).block()).isZero();
+        assertThat(adapter.countAdmins(club.communityId(), Set.of()).block()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("a member whose account is deleted, erasure pending, is never chosen to take over")
+    void findLongestStandingMember_shouldSkipUsers_whenTheyHaveADeletionMarker() {
+        Community club = create(ALICE, "Club", CommunityVisibility.PUBLIC);
+        adapter.addMember(club.communityId(), BOB, CommunityRole.MEMBER, T0.plus(1, ChronoUnit.DAYS)).block();
+        adapter.addMember(club.communityId(), CAROL, CommunityRole.MEMBER, T0.plus(2, ChronoUnit.DAYS)).block();
+        markers.markDeleted(BOB, T0.plus(3, ChronoUnit.DAYS)).block();
+
+        assertThat(adapter.findLongestStandingMember(club.communityId(), Set.of(ALICE)).block()).isEqualTo(CAROL);
+    }
+
+    @Test
+    @DisplayName("every excluded member is skipped: the leaver and the protected demo accounts")
+    void findLongestStandingMember_shouldSkipEveryExcludedUser() {
+        Community club = create(ALICE, "Club", CommunityVisibility.PUBLIC);
+        adapter.addMember(club.communityId(), BOB, CommunityRole.MEMBER, T0.plus(1, ChronoUnit.DAYS)).block();
+
+        assertThat(adapter.findLongestStandingMember(club.communityId(), Set.of(ALICE)).block()).isEqualTo(BOB);
+        StepVerifier.create(adapter.findLongestStandingMember(club.communityId(), Set.of(ALICE, BOB))).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("two members who joined at the same instant: the smallest userId, so every erasure agrees")
+    void findLongestStandingMember_shouldPickTheSmallestUserId_whenTwoJoinedAtTheSameTime() {
+        Community club = create(ALICE, "Club", CommunityVisibility.PUBLIC);
+        adapter.addMember(club.communityId(), CAROL, CommunityRole.MEMBER, T0.plus(1, ChronoUnit.DAYS)).block();
+        adapter.addMember(club.communityId(), BOB, CommunityRole.MEMBER, T0.plus(1, ChronoUnit.DAYS)).block();
+
+        assertThat(adapter.findLongestStandingMember(club.communityId(), Set.of(ALICE)).block()).isEqualTo(BOB);
+    }
+
+    @Test
+    void deleteInvitationsSentBy_shouldDeleteOnlyThatInvitersInvitations() {
+        Community club = create(ALICE, "Club", CommunityVisibility.PRIVATE);
+        Community other = create(BOB, "Other", CommunityVisibility.PRIVATE);
+        adapter.saveInvitation(club.communityId(), ALICE, BOB, "token-alice-1aaaaaaaa", T0, T0.plusSeconds(60)).block();
+        adapter.saveInvitation(other.communityId(), ALICE, CAROL, "token-alice-2aaaaaaaa", T0, T0.plusSeconds(60)).block();
+        adapter.saveInvitation(other.communityId(), BOB, ALICE, "token-bob-aaaaaaaaaaa", T0, T0.plusSeconds(60)).block();
+
+        StepVerifier.create(adapter.deleteInvitationsSentBy(ALICE)).expectNext(2L).verifyComplete();
+
+        StepVerifier.create(adapter.findInvitation("token-alice-1aaaaaaaa")).verifyComplete();
+        StepVerifier.create(adapter.findInvitation("token-alice-2aaaaaaaa")).verifyComplete();
+        assertThat(adapter.findInvitation("token-bob-aaaaaaaaaaa").block().inviteeId()).isEqualTo(ALICE);
+    }
+
+    @Test
+    void deleteInvitationsSentBy_shouldReturnZero_whenThereAreNone() {
+        StepVerifier.create(adapter.deleteInvitationsSentBy(ALICE)).expectNext(0L).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("only the user's own communities left with no member at all are deleted")
+    void deleteEmptyCommunitiesCreatedBy_shouldDeleteOnlyEmptyOnes_whenSomeStillHaveMembers() {
+        Community empty = create(ALICE, "Empty", CommunityVisibility.PUBLIC);
+        adapter.removeMember(empty.communityId(), ALICE).block();
+        Community stillUsed = create(ALICE, "Still used", CommunityVisibility.PUBLIC);
+        adapter.addMember(stillUsed.communityId(), BOB, CommunityRole.MEMBER, T0).block();
+        adapter.removeMember(stillUsed.communityId(), ALICE).block();
+        Community someoneElses = create(BOB, "Someone else's", CommunityVisibility.PUBLIC);
+        adapter.removeMember(someoneElses.communityId(), BOB).block();
+
+        StepVerifier.create(adapter.deleteEmptyCommunitiesCreatedBy(ALICE)).expectNext(1L).verifyComplete();
+
+        StepVerifier.create(adapter.findById(empty.communityId(), ALICE)).verifyComplete();
+        assertThat(adapter.findById(stillUsed.communityId(), BOB).block()).isNotNull();
+        assertThat(adapter.findById(someoneElses.communityId(), BOB).block()).isNotNull();
+    }
+
+    @Test
+    void deleteEmptyCommunitiesCreatedBy_shouldReturnZero_whenNoneIsEmpty() {
+        create(ALICE, "Club", CommunityVisibility.PUBLIC);
+
+        StepVerifier.create(adapter.deleteEmptyCommunitiesCreatedBy(ALICE)).expectNext(0L).verifyComplete();
     }
 }

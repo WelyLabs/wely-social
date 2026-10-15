@@ -7,6 +7,7 @@ import com.calendar.social.domain.models.Person;
 import com.calendar.social.domain.models.RelationStatus;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
+import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.exception.BusinessException;
 import com.calendar.social.domain.models.UserSocialDTO;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,19 +30,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Runs the Cypher of {@link Neo4jRelationshipRepositoryAdapter} against a real Neo4j.
- *
- * <p>The unit test beside this one stubs the repository, so it never executes a single line of
- * Cypher. These queries are where this service's logic actually lives — the bidirectional
- * relationship status in particular, whose {@code startNode(r)} branches decide whether a
- * pending request reads as sent by me or sent by them. A wrong direction there is invisible to
- * a mock and obvious here.
- *
- * <p>Opt-in: CI sets {@code CI=true}, locally pass {@code -Dintegration.tests=true}. The guard
- * reads an environment variable rather than probing for Docker, because a daemon that is
- * running but wedged makes that probe hang.
- */
+/** Runs the Cypher of {@link Neo4jRelationshipRepositoryAdapter} on a real Neo4j, when CI or integration.tests is set. */
 @Testcontainers
 @SpringBootTest
 @ActiveProfiles("test")
@@ -67,6 +56,9 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
 
     @Autowired
     private ReactiveNeo4jClient neo4jClient;
+
+    @Autowired
+    private Neo4jDeletedUserMarkersAdapter markers;
 
     private static final String ALICE = "alice-id";
     private static final String BOB = "bob-id";
@@ -343,6 +335,91 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         adapter.delete(ALICE).block();
 
         StepVerifier.create(adapter.delete(ALICE)).verifyComplete();
+    }
+
+    private long usersWithId(String userId) {
+        return neo4jClient.query("MATCH (u:User {userId: $id}) RETURN count(u) AS c")
+                .bind(userId).to("id")
+                .fetchAs(Long.class).mappedBy((t, r) -> r.get("c").asLong()).one().block();
+    }
+
+    private long relationshipsOf(String userId) {
+        return neo4jClient.query("MATCH (:User {userId: $id})-[r:RELATIONSHIP]-() RETURN count(r) AS c")
+                .bind(userId).to("id")
+                .fetchAs(Long.class).mappedBy((t, r) -> r.get("c").asLong()).one().block();
+    }
+
+    @Test
+    @DisplayName("a replayed USER_CREATED never brings back a user with a deletion marker")
+    void save_shouldNotRecreateTheNode_whenTheUserHasADeletionMarker() {
+        adapter.delete(ALICE).block();
+        markers.markDeleted(ALICE, Instant.parse("2026-10-15T14:00:00Z")).block();
+
+        StepVerifier.create(adapter.save(new UserCreatedEventDTO(ALICE, "alice", 1111, null))).verifyComplete();
+
+        assertThat(usersWithId(ALICE)).isZero();
+    }
+
+    @Test
+    @DisplayName("a late USER_MODIFIED never heals the node of a user with a deletion marker")
+    void update_shouldNotRecreateTheNode_whenTheUserHasADeletionMarker() {
+        adapter.delete(ALICE).block();
+        markers.markDeleted(ALICE, Instant.parse("2026-10-15T14:00:00Z")).block();
+
+        StepVerifier.create(adapter.update(new UserModifiedEventDTO(ALICE, "alice2", 1111, "A", "M", null)))
+                .verifyComplete();
+
+        assertThat(usersWithId(ALICE)).isZero();
+        assertThat(adapter.existsByUserNameAndHashtag("alice2", 1111).block()).isFalse();
+    }
+
+    @Test
+    @DisplayName("while the erasure is pending, a marked node is not renamed either")
+    void update_shouldLeaveTheNodeUnchanged_whenTheUserHasADeletionMarker() {
+        markers.markDeleted(ALICE, Instant.parse("2026-10-15T14:00:00Z")).block();
+
+        StepVerifier.create(adapter.update(new UserModifiedEventDTO(ALICE, "alice2", 1111, "A", "M", null)))
+                .verifyComplete();
+
+        assertThat(adapter.existsByUserNameAndHashtag("alice", 1111).block()).isTrue();
+        assertThat(adapter.existsByUserNameAndHashtag("alice2", 1111).block()).isFalse();
+    }
+
+    @Test
+    @DisplayName("without a marker, USER_MODIFIED still heals a node USER_CREATED never made")
+    void update_shouldStillHealAMissingNode_whenThereIsNoMarker() {
+        StepVerifier.create(adapter.update(new UserModifiedEventDTO("dave-id", "dave", 4444, "D", "V", null)))
+                .verifyComplete();
+
+        assertThat(usersWithId("dave-id")).isEqualTo(1);
+        assertThat(adapter.existsByUserNameAndHashtag("dave", 4444).block()).isTrue();
+    }
+
+    @Test
+    @DisplayName("deleting a user takes the requests it sent and the ones it received out of both inboxes")
+    void delete_shouldRemovePendingRequestsInBothDirections() {
+        adapter.sendFriendRequest(ALICE, "bob", 2222, "event-1").block();
+        adapter.sendFriendRequest(CAROL, "alice", 1111, null).block();
+
+        adapter.delete(ALICE).block();
+
+        assertThat(adapter.findIncomingRequests(BOB).collectList().block()).isEmpty();
+        assertThat(adapter.findOutgoingRequests(CAROL).collectList().block()).isEmpty();
+        assertThat(relationshipsOf(BOB)).isZero();
+        assertThat(relationshipsOf(CAROL)).isZero();
+    }
+
+    @Test
+    void delete_shouldRemoveRejectedRelationshipsInBothDirections() {
+        adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
+        adapter.rejectFriendRequest(BOB, ALICE).block();
+        adapter.sendFriendRequest(CAROL, "alice", 1111, null).block();
+        adapter.rejectFriendRequest(ALICE, CAROL).block();
+
+        adapter.delete(ALICE).block();
+
+        assertThat(relationshipsOf(BOB)).isZero();
+        assertThat(relationshipsOf(CAROL)).isZero();
     }
 
     private static Friendship withoutSince(Friendship f) {
