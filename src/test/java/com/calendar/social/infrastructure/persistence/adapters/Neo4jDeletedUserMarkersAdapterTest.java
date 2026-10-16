@@ -6,13 +6,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.util.List;
+import java.util.Set;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -55,5 +61,27 @@ class Neo4jDeletedUserMarkersAdapterTest {
 
         // Translated into DATABASE_ERROR by PersistenceErrorAspect around the adapter, not here.
         StepVerifier.create(adapter().markDeleted("u1", AT)).verifyError(IllegalStateException.class);
+    }
+
+    @Test
+    void erasedAmong_shouldReturnTheIdsOfTheErasedMarkers() {
+        when(repository.findErasedAmong(List.of("u1", "u2")))
+                .thenReturn(Flux.just(new DeletedUserNodeEntity("u1", AT_UTC, AT_UTC)));
+
+        StepVerifier.create(adapter().erasedAmong(List.of("u1", "u2"))).expectNext(Set.of("u1")).verifyComplete();
+    }
+
+    @Test
+    void erasedAmong_shouldNotQuery_whenGivenNoIds() {
+        StepVerifier.create(adapter().erasedAmong(List.of())).expectNext(Set.of()).verifyComplete();
+
+        verify(repository, never()).findErasedAmong(any());
+    }
+
+    @Test
+    void erasedAmong_shouldPropagateTheError_whenTheQueryFails() {
+        when(repository.findErasedAmong(List.of("u1"))).thenReturn(Flux.error(new IllegalStateException("Bolt reset")));
+
+        StepVerifier.create(adapter().erasedAmong(List.of("u1"))).verifyError(IllegalStateException.class);
     }
 }
