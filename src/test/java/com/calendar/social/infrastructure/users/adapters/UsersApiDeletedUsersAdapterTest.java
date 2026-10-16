@@ -34,6 +34,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class UsersApiDeletedUsersAdapterTest {
 
     private static final String SECRET = "reader-secret-value";
+    // Generous for a slow CI runner's first request; only the time-out case uses the short one.
+    private static final Duration TIMEOUT = Duration.ofSeconds(3);
     private static final Duration SHORT_TIMEOUT = Duration.ofMillis(300);
     private static final String ID = "3f0c2a4e-8b1d-4c6a-9e2f-1a2b3c4d5e6f";
 
@@ -79,8 +81,12 @@ class UsersApiDeletedUsersAdapterTest {
     }
 
     private UsersApiDeletedUsersAdapter adapter(String url, String secret) {
+        return adapter(url, secret, TIMEOUT);
+    }
+
+    private UsersApiDeletedUsersAdapter adapter(String url, String secret, Duration timeout) {
         return new UsersApiDeletedUsersAdapter(new UsersApiClientConfig().usersWebClient(url, secret), mapper,
-                url, secret, SHORT_TIMEOUT);
+                url, secret, timeout);
     }
 
     private UsersApiDeletedUsersAdapter adapter() {
@@ -157,7 +163,7 @@ class UsersApiDeletedUsersAdapterTest {
     void page_shouldFailWithUsersUnavailable_whenWelyUsersTimesOut() {
         delayMillis = 2_000;
 
-        StepVerifier.create(adapter().page(null, 500))
+        StepVerifier.create(adapter(url, SECRET, SHORT_TIMEOUT).page(null, 500))
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
                 .verify(Duration.ofSeconds(5));
     }
