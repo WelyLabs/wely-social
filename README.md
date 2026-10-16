@@ -238,6 +238,10 @@ Every step is idempotent: a replayed `USER_DELETED` changes nothing. `createdBy`
 
 Once the node is deleted, a still-valid token can no longer write anything on the user's behalf: every write (requests, acceptances, community creation, joining, invitations) `MATCH`es the user's node.
 
+### Reconciliation
+
+Kafka is not the only path to an erasure. `DeletedUsersReconciliationLoop` pages wely-users' tombstones (`GET /user-service/internal/deleted-users`, 500 per page, header `X-Internal-Secret` from `DELETED_USERS_READER_SECRET`), on the wely-users Service directly: the gateway answers 404 for `/api/v1/*/internal/**`. The first pass runs 1 min after startup; the next one 24 h after a clean pass, or 1 h after a pass that failed or counted a failed erasure. A pass reads the next page only once the current one is reconciled, so a failed read never cuts an erasure short; a pass still running after 24 h (a hung query) is cut and retried 1 h later. Each pass runs the same idempotent erasure (`AccountReconciliationService`) for every tombstone whose marker is missing or has no `erasedAt`, and for every tombstone deleted less than 48 h ago, even if erased, which sweeps a write made meanwhile by a still-valid token. This repairs a `USER_DELETED` lost by a crash, skipped after its retries, or expired from the topic before it was read. Each pass logs one INFO line with its counts, and a failed erasure logs only the `businessId`. With a blank `USERS_API_URL` or `DELETED_USERS_READER_SECRET`, every pass fails without any call and the service runs on; `ACCOUNT_ERASURE_RECONCILIATION_ENABLED=false` turns the loop off.
+
 ## Événements produits
 
 **Topic** `FRIENDSHIP_CHANGED` (surchargeable par `FRIENDSHIP_TOPIC`) · clé `toUserId`
@@ -276,6 +280,7 @@ pas d'outbox ici, contrairement à `wely-events`.
 | `SCL-REQ-000` | *repris* | Chemin inconnu, méthode non autorisée |
 | `SCL-TEC-001` | 502 | Neo4j injoignable |
 | `SCL-TEC-002` | — | Kafka injoignable — interne : la publication étant au mieux, il n'atteint jamais le client |
+| `SCL-TEC-003` | — | wely-users unreachable, or refusing the deleted-accounts listing — internal: raised by the reconciliation in the background, never returned to a client |
 
 **502 et non 500** pour l'indisponibilité du graphe : la requête était valide, c'est le magasin
 qui est tombé.
@@ -317,6 +322,9 @@ client peut tester et un `timestamp` :
 | `KAFKA_BOOTSTRAP_SERVER` | Brokers Kafka |
 | `KAFKA_KEY` / `KAFKA_SECRET` | Identifiants SASL |
 | `ACCOUNT_DELETION_PROTECTED_USER_IDS` | Demo accounts' `businessId`s, comma-separated canonical UUIDs (any other value fails the startup): never counted as a remaining community admin nor promoted. Empty by default |
+| `USERS_API_URL` | In-cluster URL of wely-users, read by the reconciliation (`http://localhost:8082` in the `dev` profile). Empty by default: every pass then fails without a call |
+| `DELETED_USERS_READER_SECRET` | Sent as `X-Internal-Secret` to wely-users' deleted-accounts listing. Empty by default: every pass then fails without a call |
+| `ACCOUNT_ERASURE_RECONCILIATION_ENABLED` | Runs the reconciliation loop, `true` by default |
 | `FRIENDSHIP_TOPIC` | Topic produit, `FRIENDSHIP_CHANGED` par défaut |
 | `KEYCLOAK_ISSUER_URI` | Issuer public — validation de l'émetteur |
 | `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS interne — récupération des clés |
@@ -354,6 +362,6 @@ kubectl apply -k overlays/local --server-side
 ## Limites connues
 
 - **La liste d'utilisateurs n'est pas paginée.** `MATCH (other:User)` parcourt tous les nœuds, sans `SKIP`/`LIMIT` ni filtre serveur — le filtrage est fait côté client. À remplacer par une recherche paramétrée, paginée et indexée sur `(userName, hashtag)`.
-- **A lost `USER_DELETED` is not replayed.** The reactive binder acknowledges a record when it enters the stream, so a shutdown mid-erasure, or six failures in a row, lose it. The marker keeps the erasure idempotent, but nothing re-runs a missed erasure yet.
+- **A lost orphan `USER_DELETED` is not replayed.** The reactive binder acknowledges a record when it enters the stream, so a shutdown mid-erasure, or six failures in a row, lose it. The reconciliation repairs a user-requested deletion, but an abandoned registration leaves no tombstone in wely-users, so nothing re-runs its erasure.
 - **Le champ `friendships` de `UserNodeEntity` est toujours vide** : il est mappé sur le type `FRIENDSHIP` alors que toutes les requêtes utilisent `RELATIONSHIP`.
 - **Pas de tests d'intégration** : les requêtes Cypher ne sont jamais exécutées contre un vrai Neo4j.

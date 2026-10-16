@@ -24,6 +24,13 @@ public enum TechnicalErrorCode {
             "SCL-TEC-002",
             "Message broker unavailable",
             "The event could not be sent to Kafka.",
+            HttpStatus.BAD_GATEWAY),
+
+    /** Raised by the reconciliation in the background: no request waits on it, the next pass retries. */
+    USERS_UNAVAILABLE(
+            "SCL-TEC-003",
+            "User service unavailable",
+            "The deleted accounts could not be listed from wely-users.",
             HttpStatus.BAD_GATEWAY);
 
     private final String code;

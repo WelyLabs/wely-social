@@ -2,13 +2,16 @@ package com.calendar.social.configuration;
 
 import com.calendar.social.domain.ports.CommunityRepository;
 import com.calendar.social.domain.ports.DeletedUserMarkers;
+import com.calendar.social.domain.ports.DeletedUsersSource;
 import com.calendar.social.domain.ports.FriendshipEventPublisher;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.domain.ports.TransactionRunner;
+import com.calendar.social.domain.services.AccountErasureService;
 import com.calendar.social.domain.services.CommunityService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -39,6 +42,12 @@ class SocialApplicationConfigTest {
 
         assertThat(config.accountErasureService(mock(DeletedUserMarkers.class), mock(CommunityRepository.class),
                 communityService, mock(RelationshipRepository.class), mock(TransactionRunner.class))).isNotNull();
+    }
+
+    @Test
+    void accountReconciliationService_shouldBuildTheDomainServiceFromItsPorts() {
+        assertThat(config.accountReconciliationService(mock(DeletedUsersSource.class), mock(DeletedUserMarkers.class),
+                mock(AccountErasureService.class), 500, Duration.ofHours(48))).isNotNull();
     }
 
     @Test

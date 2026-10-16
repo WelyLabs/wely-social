@@ -4,9 +4,11 @@ import com.calendar.social.infrastructure.persistence.models.entities.DeletedUse
 import org.springframework.data.neo4j.repository.ReactiveNeo4jRepository;
 import org.springframework.data.neo4j.repository.query.Query;
 import org.springframework.stereotype.Repository;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.ZonedDateTime;
+import java.util.Collection;
 
 @Repository
 public interface DeletedUserNodeRepository extends ReactiveNeo4jRepository<DeletedUserNodeEntity, String> {
@@ -22,4 +24,8 @@ public interface DeletedUserNodeRepository extends ReactiveNeo4jRepository<Delet
             + "SET d.erasedAt = coalesce(d.erasedAt, $erasedAt) "
             + "RETURN d")
     Mono<DeletedUserNodeEntity> markErased(String userId, ZonedDateTime erasedAt);
+
+    /** The markers among these ids whose erasure completed, in one query. */
+    @Query("MATCH (d:DeletedUser) WHERE d.userId IN $userIds AND d.erasedAt IS NOT NULL RETURN d")
+    Flux<DeletedUserNodeEntity> findErasedAmong(Collection<String> userIds);
 }

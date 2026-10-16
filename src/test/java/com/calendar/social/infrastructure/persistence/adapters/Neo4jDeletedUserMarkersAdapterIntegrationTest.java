@@ -17,6 +17,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -100,5 +102,19 @@ class Neo4jDeletedUserMarkersAdapterIntegrationTest {
         StepVerifier.create(adapter.markErased(USER, FIRST)).verifyComplete();
 
         assertThat(markers()).isZero();
+    }
+
+    @Test
+    @DisplayName("only markers whose erasure completed are listed, in one query over the given ids")
+    void erasedAmong_shouldReturnOnlyTheMarkersWhoseErasureCompleted() {
+        adapter.markDeleted("erased", FIRST).block();
+        adapter.markErased("erased", LATER).block();
+        adapter.markDeleted("in-flight", FIRST).block();
+        adapter.markDeleted("not-asked", FIRST).block();
+        adapter.markErased("not-asked", LATER).block();
+
+        StepVerifier.create(adapter.erasedAmong(List.of("erased", "in-flight", "unknown")))
+                .expectNext(Set.of("erased"))
+                .verifyComplete();
     }
 }

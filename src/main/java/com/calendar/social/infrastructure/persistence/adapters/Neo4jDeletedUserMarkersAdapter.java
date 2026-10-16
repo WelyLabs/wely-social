@@ -1,12 +1,16 @@
 package com.calendar.social.infrastructure.persistence.adapters;
 
 import com.calendar.social.domain.ports.DeletedUserMarkers;
+import com.calendar.social.infrastructure.persistence.models.entities.DeletedUserNodeEntity;
 import com.calendar.social.infrastructure.persistence.repositories.DeletedUserNodeRepository;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /** Deletion markers as {@code (:DeletedUser)} nodes, kept apart from {@code (:User)} so no user query lists them. */
 @Component
@@ -26,5 +30,15 @@ public class Neo4jDeletedUserMarkersAdapter implements DeletedUserMarkers {
     @Override
     public Mono<Void> markErased(String userId, Instant erasedAt) {
         return repository.markErased(userId, erasedAt.atZone(ZoneOffset.UTC)).then();
+    }
+
+    @Override
+    public Mono<Set<String>> erasedAmong(Collection<String> userIds) {
+        if (userIds.isEmpty()) {
+            return Mono.just(Set.of());
+        }
+        return repository.findErasedAmong(userIds)
+                .map(DeletedUserNodeEntity::getUserId)
+                .collect(Collectors.toUnmodifiableSet());
     }
 }

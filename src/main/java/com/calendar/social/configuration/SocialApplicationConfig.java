@@ -2,10 +2,12 @@ package com.calendar.social.configuration;
 
 import com.calendar.social.domain.ports.CommunityRepository;
 import com.calendar.social.domain.ports.DeletedUserMarkers;
+import com.calendar.social.domain.ports.DeletedUsersSource;
 import com.calendar.social.domain.ports.FriendshipEventPublisher;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.domain.ports.TransactionRunner;
 import com.calendar.social.domain.services.AccountErasureService;
+import com.calendar.social.domain.services.AccountReconciliationService;
 import com.calendar.social.domain.services.CommunityService;
 import com.calendar.social.domain.services.RelationshipService;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +17,7 @@ import org.springframework.context.annotation.Configuration;
 
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Set;
@@ -53,6 +56,17 @@ public class SocialApplicationConfig {
                                                        TransactionRunner transactions) {
         return new AccountErasureService(markers, communityRepository, communityService, relationshipRepository,
                 transactions, Clock.systemUTC());
+    }
+
+    @Bean
+    public AccountReconciliationService accountReconciliationService(
+            DeletedUsersSource deletedUsersSource,
+            DeletedUserMarkers markers,
+            AccountErasureService accountErasureService,
+            @Value("${app.account-erasure.reconciliation.page-size:500}") int pageSize,
+            @Value("${app.account-erasure.reconciliation.recent-window:48h}") Duration recentWindow) {
+        return new AccountReconciliationService(deletedUsersSource, markers, accountErasureService, Clock.systemUTC(),
+                pageSize, recentWindow);
     }
 
     /**
