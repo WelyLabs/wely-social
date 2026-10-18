@@ -31,7 +31,7 @@ public class Neo4jFriendshipOutboxAdapter implements FriendshipEventOutbox {
     /** A new {@code snapshotName} runs the backfill once more, for a consumer that cannot replay the topic. */
     public Neo4jFriendshipOutboxAdapter(
             FriendshipOutboxEventRepository repository,
-            @Value("${app.friendships.snapshot-name:friendship-snapshot-v1}") String snapshotName) {
+            @Value("${app.friendships.snapshot-name:friendship-snapshot-v2}") String snapshotName) {
         this.repository = repository;
         this.snapshotName = snapshotName;
     }
@@ -63,8 +63,14 @@ public class Neo4jFriendshipOutboxAdapter implements FriendshipEventOutbox {
         return repository.recordFailure(version, truncate(error));
     }
 
-    public Mono<Long> purgePublishedBefore(Instant cutoff, int limit) {
-        return repository.deletePublishedBefore(cutoff.atZone(ZoneOffset.UTC), limit);
+    /** Gives up on a pending record: the relay skips it from now on, and it is kept for inspection. */
+    public Mono<Long> park(long version, String error) {
+        return repository.park(version, truncate(error));
+    }
+
+    /** Deletes published and parked records older than the cutoff, at most {@code limit} of them. */
+    public Mono<Long> purgeSettledBefore(Instant cutoff, int limit) {
+        return repository.deleteSettledBefore(cutoff.atZone(ZoneOffset.UTC), limit);
     }
 
     private static String truncate(String error) {

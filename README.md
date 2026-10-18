@@ -260,7 +260,7 @@ Kafka is not the only path to an erasure. `DeletedUsersReconciliationLoop` pages
 | `CANCELLED` | `fromUser` withdrew its request. Part of the contract; no operation emits it yet |
 | `REMOVED` | `fromUser` ended the friendship, or deleted its account |
 | `CLOSENESS_CHANGED` | a closeness took effect: an agreed step up, or a one-sided step down by `fromUser`. A mere proposal is not published |
-| `SNAPSHOT` | one-time backfill of an existing friendship, shaped like `ACCEPTED`; wely-notifications ignores it |
+| `SNAPSHOT` | backfill of an existing friendship, shaped like `ACCEPTED`; consumers of this topic ignore it or drop it by version |
 
 | Field | |
 |---|---|
@@ -271,13 +271,38 @@ Kafka is not the only path to an erasure. `DeletedUsersReconciliationLoop` pages
 | `version` | rises with every record of a pair, so a consumer drops a record whose version it already holds |
 | `occurredAt` | when the change was committed |
 
+**Topic** `FRIENDSHIP_STATE` (overridable with `FRIENDSHIP_STATE_TOPIC`, `cleanup.policy=compact`, created beforehand) · Kafka record key: `a:b`, the two ids sorted
+
+The pair's **current** friendship, for a consumer that needs the state rather than the history (wely-events' friendship projection). The relay writes it from the same outbox record, right after the `FRIENDSHIP_CHANGED` one:
+
+| Record on `FRIENDSHIP_CHANGED` | On `FRIENDSHIP_STATE` |
+|---|---|
+| `ACCEPTED`, `CLOSENESS_CHANGED`, `SNAPSHOT` | the friendship, below |
+| `REMOVED` (account erasure included) | a **tombstone**: the key with a null value |
+| `REQUESTED`, `REJECTED`, `CANCELLED` | nothing |
+
+```json
+{ "a": "…", "b": "…", "friends": true, "closeness": "CLOSE",
+  "since": "2026-10-01T08:00:00Z", "version": 1760779800123 }
+```
+
+`version` is the outbox record's, shared with `FRIENDSHIP_CHANGED`: a consumer keeps, per pair, the highest version it has applied and drops a value whose version is not higher (a resend). A tombstone has no body, hence no version: it is applied in offset order, which is the pair's order, since all of a pair's records share its key and partition and the relay sends them in version order.
+
+**Rebuilding.** Compaction keeps at least the last record per key, so the topic always holds every current friendship. A consumer rebuilds its projection by starting a **new consumer group from the earliest offset** (`start-offset=earliest`, or `resetOffsets`) and applying every record in order: a value upserts the pair, a tombstone deletes it. Tombstones themselves are removed after the topic's `delete.retention.ms`, so a consumer started later simply never sees pairs that ended.
+
 ### Guarantees
 
 - **Transactional outbox.** A change and its `(:FriendshipOutboxEvent:Unpublished)` record are written in the **same Neo4j transaction** (`TransactionRunner` over the `ReactiveNeo4jTransactionManager` declared in `Neo4jConfig`): both commit, or neither does. The best-effort publisher is gone.
 - **Version.** One `(:FriendshipClock)` node hands out `max(previous + 1, now in ms)` to each record, in the record's statement. Writing the clock locks it until commit, so versions follow commit order; the clock outlives relationships, so a pair deleted and re-created keeps rising, and the millisecond floor survives a wiped graph.
-- **Relay.** `FriendshipOutboxRelay` sends pending records every 2 s in version order, marks each one published once Kafka has acknowledged it (`producer.sync=true`), and stops a pass at the first failure. A failed record is retried on every pass **without limit**, never skipped, so no later record of the pair overtakes it; attempts and the last error are kept on the record, and each failure from the fifth on is logged as an error. Delivery is at-least-once: a crash between the send and the mark sends the record again, and consumers drop the duplicate by its version.
-- **Purge.** Published records are deleted after 7 days (hourly pass, 10 000 at most per pass). Pending records are never purged.
-- **Snapshot.** At startup, if no `(:Migration {name: <FRIENDSHIP_SNAPSHOT_NAME>})` exists, one `SNAPSHOT` record per accepted pair is enqueued and the marker created, in one statement. The topic keeps records for 3 days only: to rebuild a projection, or to feed a new consumer, set `FRIENDSHIP_SNAPSHOT_NAME` to a new value (`friendship-snapshot-v2`, …) and the next start re-runs it once.
+- **Relay.** `FriendshipOutboxRelay` sends pending records every 2 s in version order: the `FRIENDSHIP_CHANGED` record, then the `FRIENDSHIP_STATE` one when there is one. It marks the outbox record published only once Kafka has acknowledged **both** (`producer.sync=true` on both bindings); if the second fails, the next attempt sends both again, which consumers drop by version. Delivery is at-least-once: a crash between the sends and the mark sends the record again.
+- **Failures.** Each failure is classified (`PublicationErrorClassifier`):
+  - *retriable* (broker unreachable, timeout, unknown error): the pass stops there, so no later record of the pair overtakes it; the attempt and the error are counted on the record, and the next passes back off, doubling from 2 s up to 5 min, back to 2 s after a clean pass. From the fifth attempt on, each failure is logged as an error.
+  - *permanent* (a message that cannot be built, a serialization failure, `RecordTooLargeException`, `InvalidTopicException`): the record is **parked** at once and the pass goes on with the next one.
+  - Any record failing **20 times in a row** (`app.friendship-outbox.relay.max-attempts`) is parked too, whatever the error.
+
+  A parked record loses its `Unpublished` label for `Parked`, gets `parkedAt`, `attempts` and `lastError` (root cause included), is logged at ERROR, and is never sent: inspect with `MATCH (e:FriendshipOutboxEvent:Parked) RETURN e`.
+- **Purge.** Published and parked records are deleted after 7 days (hourly pass, 10 000 at most per pass). Pending records are never purged.
+- **Snapshot.** At startup, if no `(:Migration {name: <FRIENDSHIP_SNAPSHOT_NAME>})` exists, one `SNAPSHOT` record per accepted pair is enqueued and the marker created, in one statement; each goes to both topics. The default name is `friendship-snapshot-v2`: `v1` ran in dev before `FRIENDSHIP_STATE` existed, and bumping it is what fills the state topic with the friendships made before it. To re-run it later (a lost state topic, a consumer of `FRIENDSHIP_CHANGED` that cannot replay it, the topic keeping records for 3 days only), set `FRIENDSHIP_SNAPSHOT_NAME` to a new value (`friendship-snapshot-v3`, …): the next start enqueues every current friendship once more.
 
 ---
 
@@ -344,8 +369,9 @@ client peut tester et un `timestamp` :
 | `DELETED_USERS_READER_SECRET` | Sent as `X-Internal-Secret` to wely-users' deleted-accounts listing. Empty by default: every pass then fails without a call |
 | `ACCOUNT_ERASURE_RECONCILIATION_ENABLED` | Runs the reconciliation loop, `true` by default |
 | `FRIENDSHIP_TOPIC` | Topic produit, `FRIENDSHIP_CHANGED` par défaut |
+| `FRIENDSHIP_STATE_TOPIC` | Compacted state topic, `FRIENDSHIP_STATE` by default |
 | `FRIENDSHIP_OUTBOX_RELAY_ENABLED` | Runs the `FRIENDSHIP_CHANGED` outbox relay, `true` by default |
-| `FRIENDSHIP_SNAPSHOT_NAME` | Name of the one-time snapshot's marker, `friendship-snapshot-v1` by default; a new value re-runs the snapshot once |
+| `FRIENDSHIP_SNAPSHOT_NAME` | Name of the one-time snapshot's marker, `friendship-snapshot-v2` by default; a new value re-runs the snapshot once |
 | `KEYCLOAK_ISSUER_URI` | Issuer public — validation de l'émetteur |
 | `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS interne — récupération des clés |
 
@@ -383,5 +409,6 @@ kubectl apply -k overlays/local --server-side
 
 - **La liste d'utilisateurs n'est pas paginée.** `MATCH (other:User)` parcourt tous les nœuds, sans `SKIP`/`LIMIT` ni filtre serveur — le filtrage est fait côté client. À remplacer par une recherche paramétrée, paginée et indexée sur `(userName, hashtag)`.
 - **A lost orphan `USER_DELETED` is not replayed.** The reactive binder acknowledges a record when it enters the stream, so a shutdown mid-erasure, or six failures in a row, lose it. The reconciliation repairs a user-requested deletion, but an abandoned registration leaves no tombstone in wely-users, so nothing re-runs its erasure.
-- **One undeliverable `FRIENDSHIP_CHANGED` record holds back the ones after it.** The relay retries in strict version order without limit, which keeps each pair in order but lets a broker outage, or a record Kafka keeps refusing, delay every later change until it goes out. The record's `attempts` and `lastError`, and the error log from the fifth attempt on, show it.
+- **A parked record is never delivered, and the records after it overtake it.** Parking stops one bad record from holding back every later change, at a price: consumers miss that change, and a later record of the same pair goes out before it. On `FRIENDSHIP_STATE` the next change of the pair repairs the state; until then, or if there is none, it stays stale. Nothing re-sends a parked record: fix the cause, then remove the `Parked` label and add `Unpublished` back, or re-run the snapshot.
+- **A long broker outage parks records.** Retriable failures also count towards the 20-attempt limit. With the backoff, the head record is parked after roughly an hour of outage, and each record behind it after about 1 h 35 more. A retriable error is retried in strict version order meanwhile, so an outage still delays every later change until it ends or the record is parked.
 - **Le champ `friendships` de `UserNodeEntity` est toujours vide** : il est mappé sur le type `FRIENDSHIP` alors que toutes les requêtes utilisent `RELATIONSHIP`.

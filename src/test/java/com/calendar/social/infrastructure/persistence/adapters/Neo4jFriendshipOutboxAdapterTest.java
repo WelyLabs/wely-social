@@ -111,10 +111,33 @@ class Neo4jFriendshipOutboxAdapterTest {
     }
 
     @Test
-    void purgePublishedBefore_shouldPassTheCutoffInUtc_andTheBatchSize() {
-        Instant cutoff = Instant.parse("2026-10-11T00:00:00Z");
-        when(repository.deletePublishedBefore(cutoff.atZone(ZoneOffset.UTC), 500)).thenReturn(Mono.just(7L));
+    void park_shouldStoreAShortErrorAsIs() {
+        when(repository.park(42L, "record too large")).thenReturn(Mono.just(1L));
 
-        StepVerifier.create(adapter.purgePublishedBefore(cutoff, 500)).expectNext(7L).verifyComplete();
+        StepVerifier.create(adapter.park(42L, "record too large")).expectNext(1L).verifyComplete();
+    }
+
+    @Test
+    void park_shouldTruncateALongError() {
+        String longError = "x".repeat(Neo4jFriendshipOutboxAdapter.MAX_STORED_ERROR_LENGTH + 50);
+        String truncated = "x".repeat(Neo4jFriendshipOutboxAdapter.MAX_STORED_ERROR_LENGTH);
+        when(repository.park(42L, truncated)).thenReturn(Mono.just(1L));
+
+        StepVerifier.create(adapter.park(42L, longError)).expectNext(1L).verifyComplete();
+    }
+
+    @Test
+    void park_shouldFail_whenTheGraphFails() {
+        when(repository.park(42L, "too large")).thenReturn(Mono.error(new IllegalStateException("graph down")));
+
+        StepVerifier.create(adapter.park(42L, "too large")).verifyError(IllegalStateException.class);
+    }
+
+    @Test
+    void purgeSettledBefore_shouldPassTheCutoffInUtc_andTheBatchSize() {
+        Instant cutoff = Instant.parse("2026-10-11T00:00:00Z");
+        when(repository.deleteSettledBefore(cutoff.atZone(ZoneOffset.UTC), 500)).thenReturn(Mono.just(7L));
+
+        StepVerifier.create(adapter.purgeSettledBefore(cutoff, 500)).expectNext(7L).verifyComplete();
     }
 }

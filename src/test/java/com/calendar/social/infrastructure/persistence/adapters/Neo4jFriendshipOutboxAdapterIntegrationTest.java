@@ -229,17 +229,41 @@ class Neo4jFriendshipOutboxAdapterIntegrationTest {
     }
 
     @Test
-    @DisplayName("the purge deletes published records past the cutoff, never a pending one")
-    void purgePublishedBefore_shouldDeleteOnlyOldPublishedRecords() {
+    @DisplayName("a parked record leaves the pending ones for good, with its error and attempt kept for inspection")
+    void park_shouldTakeTheRecordOutOfThePending_andKeepWhy() {
         outbox.append(FriendshipEvent.betweenNonFriends(FriendshipEventType.REQUESTED, ALICE, BOB)).block();
         outbox.append(FriendshipEvent.betweenNonFriends(FriendshipEventType.REQUESTED, ALICE, CAROL)).block();
-        outbox.markPublished(all().getFirst().getVersion()).block();
+        long version = all().getFirst().getVersion();
+        outbox.recordFailure(version, "broker down").block();
 
-        StepVerifier.create(outbox.purgePublishedBefore(Instant.now().minus(Duration.ofDays(1)), 100))
+        StepVerifier.create(outbox.park(version, "record too large")).expectNext(1L).verifyComplete();
+        StepVerifier.create(outbox.park(version, "again")).expectNext(0L).verifyComplete();
+
+        FriendshipOutboxEventEntity parked = all().getFirst();
+        assertThat(parked.getParkedAt()).isNotNull();
+        assertThat(parked.getPublishedAt()).isNull();
+        assertThat(parked.getAttempts()).isEqualTo(2);
+        assertThat(parked.getLastError()).isEqualTo("record too large");
+        assertThat(count("MATCH (e:FriendshipOutboxEvent:Parked) RETURN count(e) AS c", Map.of())).isEqualTo(1);
+        StepVerifier.create(outbox.findPending(10)).assertNext(record ->
+                assertThat(record.getToUserId()).isEqualTo(CAROL)).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the purge deletes published and parked records past the cutoff, never a pending one")
+    void purgeSettledBefore_shouldDeleteOnlyOldPublishedOrParkedRecords() {
+        outbox.append(FriendshipEvent.betweenNonFriends(FriendshipEventType.REQUESTED, ALICE, BOB)).block();
+        outbox.append(FriendshipEvent.betweenNonFriends(FriendshipEventType.REQUESTED, ALICE, CAROL)).block();
+        outbox.append(FriendshipEvent.betweenNonFriends(FriendshipEventType.REQUESTED, BOB, CAROL)).block();
+        List<FriendshipOutboxEventEntity> records = all();
+        outbox.markPublished(records.get(0).getVersion()).block();
+        outbox.park(records.get(1).getVersion(), "record too large").block();
+
+        StepVerifier.create(outbox.purgeSettledBefore(Instant.now().minus(Duration.ofDays(1)), 100))
                 .expectNext(0L).verifyComplete();
-        StepVerifier.create(outbox.purgePublishedBefore(Instant.now().plus(Duration.ofMinutes(1)), 100))
-                .expectNext(1L).verifyComplete();
+        StepVerifier.create(outbox.purgeSettledBefore(Instant.now().plus(Duration.ofMinutes(1)), 100))
+                .expectNext(2L).verifyComplete();
 
-        assertThat(all()).singleElement().satisfies(record -> assertThat(record.getToUserId()).isEqualTo(CAROL));
+        assertThat(all()).singleElement().satisfies(record -> assertThat(record.getFromUserId()).isEqualTo(BOB));
     }
 }

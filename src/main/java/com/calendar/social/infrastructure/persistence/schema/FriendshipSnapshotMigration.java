@@ -12,8 +12,8 @@ import reactor.util.retry.Retry;
 import java.time.Duration;
 
 /**
- * Backfills FRIENDSHIP_CHANGED once: one SNAPSHOT record per accepted pair, so a consumer that
- * starts from the topic's beginning learns the friendships made before the outbox existed. The
+ * Backfills FRIENDSHIP_CHANGED and FRIENDSHIP_STATE once: one SNAPSHOT record per accepted pair, so a
+ * consumer that starts from the beginning learns the friendships made before the outbox existed. The
  * {@code (:Migration {name: <app.friendships.snapshot-name>})} marker makes every later start a
  * no-op; the topic keeps records for days only, so a new name re-runs it for a rebuilt projection.
  */

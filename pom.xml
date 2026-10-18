@@ -153,6 +153,12 @@
 			<artifactId>neo4j</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- A real broker, to prove FRIENDSHIP_STATE's record keys and tombstones (as in wely-chat, wely-notifications). -->
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>kafka</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>junit-jupiter</artifactId>

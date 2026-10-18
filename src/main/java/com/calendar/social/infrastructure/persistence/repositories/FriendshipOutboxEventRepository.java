@@ -90,10 +90,17 @@ public interface FriendshipOutboxEventRepository extends ReactiveNeo4jRepository
             + "RETURN count(e)")
     Mono<Long> recordFailure(Long version, String error);
 
-    /** Deletes at most {@code limit} records published before the cutoff; never a pending one. */
-    @Query("MATCH (e:FriendshipOutboxEvent) WHERE e.publishedAt < $cutoff "
+    /** Takes a record out of the pending ones for good, counting the attempt that made the relay give up. */
+    @Query("MATCH (e:FriendshipOutboxEvent:Unpublished {version: $version}) "
+            + "REMOVE e:Unpublished SET e:Parked, e.parkedAt = datetime(), "
+            + "    e.attempts = coalesce(e.attempts, 0) + 1, e.lastError = $error "
+            + "RETURN count(e)")
+    Mono<Long> park(Long version, String error);
+
+    /** Deletes at most {@code limit} records published or parked before the cutoff; never a pending one. */
+    @Query("MATCH (e:FriendshipOutboxEvent) WHERE e.publishedAt < $cutoff OR e.parkedAt < $cutoff "
             + "WITH e LIMIT $limit "
             + "DELETE e "
             + "RETURN count(*)")
-    Mono<Long> deletePublishedBefore(ZonedDateTime cutoff, int limit);
+    Mono<Long> deleteSettledBefore(ZonedDateTime cutoff, int limit);
 }

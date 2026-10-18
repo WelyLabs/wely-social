@@ -58,6 +58,7 @@ class Neo4jSchemaInitializerTest {
                 Neo4jSchemaInitializer.FRIENDSHIP_CLOCK_CONSTRAINT,
                 Neo4jSchemaInitializer.FRIENDSHIP_OUTBOX_VERSION_CONSTRAINT,
                 Neo4jSchemaInitializer.FRIENDSHIP_OUTBOX_PUBLISHED_INDEX,
+                Neo4jSchemaInitializer.FRIENDSHIP_OUTBOX_PARKED_INDEX,
                 Neo4jSchemaInitializer.MIGRATION_CONSTRAINT);
         assertThat(Neo4jSchemaInitializer.STATEMENTS).allMatch(statement -> statement.contains("IF NOT EXISTS"));
     }

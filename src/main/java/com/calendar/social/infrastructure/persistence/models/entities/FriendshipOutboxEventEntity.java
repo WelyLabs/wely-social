@@ -11,7 +11,8 @@ import java.time.ZonedDateTime;
 
 /**
  * A FRIENDSHIP_CHANGED record waiting for, or past, its publication. Pending ones also carry the
- * {@code Unpublished} label, which the relay's query scans instead of every record kept.
+ * {@code Unpublished} label, which the relay's query scans instead of every record kept; one the relay
+ * gave up on trades it for {@code Parked}.
  */
 @Node("FriendshipOutboxEvent")
 @Getter
@@ -41,4 +42,6 @@ public class FriendshipOutboxEventEntity {
     private ZonedDateTime publishedAt;
     private Long attempts;
     private String lastError;
+    /** When the relay gave up on it: never sent, kept for inspection, purged like a published one. */
+    private ZonedDateTime parkedAt;
 }

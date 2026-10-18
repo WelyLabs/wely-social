@@ -20,7 +20,7 @@ class FriendshipChangedMapperTest {
 
     private static FriendshipOutboxEventEntity record(String type, String closeness, ZonedDateTime since) {
         return new FriendshipOutboxEventEntity(1760779800123L, type, "bob", "Bob", "alice", "alice:bob", closeness,
-                null, since, AT, null, 0L, null);
+                null, since, AT, null, 0L, null, null);
     }
 
     @Test

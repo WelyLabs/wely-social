@@ -77,6 +77,15 @@ class Neo4jSchemaInitializerIntegrationTest {
     }
 
     @Test
+    @DisplayName("the purge's lookups by publication and parking date are indexed")
+    void start_shouldCreateTheFriendshipOutboxPurgeIndexes() {
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(neo4jClient.query(
+                        "SHOW INDEXES YIELD name WHERE name IN ['friendship_outbox_published_at', "
+                                + "'friendship_outbox_parked_at'] RETURN count(*) AS c")
+                .fetchAs(Long.class).mappedBy((t, r) -> r.get("c").asLong()).one().block()).isEqualTo(2));
+    }
+
+    @Test
     @DisplayName("IF NOT EXISTS: running it again, as every restart does, succeeds and changes nothing")
     void start_shouldSucceed_whenTheConstraintAlreadyExists() {
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(constraints()).isEqualTo(1));

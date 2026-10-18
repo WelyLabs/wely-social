@@ -31,11 +31,15 @@ public class Neo4jSchemaInitializer implements SmartLifecycle {
     /** For the purge, which looks records up by publication date. */
     static final String FRIENDSHIP_OUTBOX_PUBLISHED_INDEX = "CREATE INDEX friendship_outbox_published_at "
             + "IF NOT EXISTS FOR (e:FriendshipOutboxEvent) ON (e.publishedAt)";
+    /** For the same purge, which also deletes parked records past the retention. */
+    static final String FRIENDSHIP_OUTBOX_PARKED_INDEX = "CREATE INDEX friendship_outbox_parked_at "
+            + "IF NOT EXISTS FOR (e:FriendshipOutboxEvent) ON (e.parkedAt)";
     static final String MIGRATION_CONSTRAINT =
             "CREATE CONSTRAINT migration_name IF NOT EXISTS FOR (m:Migration) REQUIRE m.name IS UNIQUE";
 
     static final List<String> STATEMENTS = List.of(DELETED_USER_CONSTRAINT, FRIENDSHIP_CLOCK_CONSTRAINT,
-            FRIENDSHIP_OUTBOX_VERSION_CONSTRAINT, FRIENDSHIP_OUTBOX_PUBLISHED_INDEX, MIGRATION_CONSTRAINT);
+            FRIENDSHIP_OUTBOX_VERSION_CONSTRAINT, FRIENDSHIP_OUTBOX_PUBLISHED_INDEX, FRIENDSHIP_OUTBOX_PARKED_INDEX,
+            MIGRATION_CONSTRAINT);
 
     private final ReactiveNeo4jClient client;
     private final Duration firstBackoff;
