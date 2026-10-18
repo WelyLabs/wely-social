@@ -101,9 +101,10 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
             + "     r.status AS status, "
             + "     toString(r.createdAt) AS createdAt, "
             + "     toString(r.acceptedAt) AS acceptedAt, "
-            + "     toString(r.rejectedAt) AS rejectedAt "
+            + "     toString(r.rejectedAt) AS rejectedAt, "
+            + "     coalesce(r.closeness, 'FRIEND') AS closeness "
             + "DELETE r "
-            + "RETURN status, createdAt, acceptedAt, rejectedAt")
+            + "RETURN status, createdAt, acceptedAt, rejectedAt, closeness")
     Mono<RelationshipDBDTO> deleteFriendship(String myId, String otherId);
 
     /** DETACH DELETE: the user's relationships go with it. A missing user matches nothing. */

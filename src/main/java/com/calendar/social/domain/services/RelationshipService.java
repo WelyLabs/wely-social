@@ -11,8 +11,9 @@ import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.UserNodeDTO;
 import com.calendar.social.domain.models.UserResult;
 import com.calendar.social.domain.models.UserTag;
-import com.calendar.social.domain.ports.FriendshipEventPublisher;
+import com.calendar.social.domain.ports.FriendshipEventOutbox;
 import com.calendar.social.domain.ports.RelationshipRepository;
+import com.calendar.social.domain.ports.TransactionRunner;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
 import reactor.core.publisher.Flux;
@@ -25,16 +26,15 @@ public class RelationshipService {
 
     static final int MUTUAL_FRIENDS_LIMIT = 50;
 
-    // JDK logger: the domain takes no logging dependency.
-    private static final System.Logger LOG = System.getLogger(RelationshipService.class.getName());
-
     private final RelationshipRepository relationshipRepository;
-    private final FriendshipEventPublisher friendshipEventPublisher;
+    private final FriendshipEventOutbox outbox;
+    private final TransactionRunner transactions;
 
-    public RelationshipService(RelationshipRepository relationshipRepository,
-                               FriendshipEventPublisher friendshipEventPublisher) {
+    public RelationshipService(RelationshipRepository relationshipRepository, FriendshipEventOutbox outbox,
+                               TransactionRunner transactions) {
         this.relationshipRepository = relationshipRepository;
-        this.friendshipEventPublisher = friendshipEventPublisher;
+        this.outbox = outbox;
+        this.transactions = transactions;
     }
 
     /**
@@ -47,24 +47,32 @@ public class RelationshipService {
         return relationshipRepository.existsByUserNameAndHashtag(target.userName(), target.hashtag())
                 .filter(Boolean::booleanValue)
                 .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.USER_DOES_NOT_EXIST)))
-                .flatMap(exists -> relationshipRepository.sendFriendRequest(
-                        userId, target.userName(), target.hashtag(), viaEventId))
-                .flatMap(receiver -> announce(FriendshipEventType.REQUESTED, userId, receiver.userId())
-                        .thenReturn(receiver));
+                .flatMap(exists -> transactions.inTransaction(Mono.defer(() -> relationshipRepository
+                                .sendFriendRequest(userId, target.userName(), target.hashtag(), viaEventId))
+                        .flatMap(receiver -> record(FriendshipEvent.betweenNonFriends(
+                                        FriendshipEventType.REQUESTED, userId, receiver.userId()))
+                                .thenReturn(receiver))));
     }
 
+    /** The event goes from the acceptor to the original requester, as wely-notifications expects. */
     public Mono<UserNodeDTO> acceptFriendRequest(String userId, String senderId) {
-        return relationshipRepository.acceptFriendRequest(userId, senderId)
-                .flatMap(sender -> announce(FriendshipEventType.ACCEPTED, userId, sender.userId())
-                        .thenReturn(sender));
+        return transactions.inTransaction(Mono.defer(() -> relationshipRepository.acceptFriendRequest(userId, senderId))
+                .flatMap(sender -> record(FriendshipEvent.betweenNonFriends(
+                        FriendshipEventType.ACCEPTED, userId, sender.userId()))
+                        .thenReturn(sender)));
     }
 
     public Mono<UserNodeDTO> rejectFriendRequest(String userId, String senderId) {
-        return relationshipRepository.rejectFriendRequest(userId, senderId);
+        return transactions.inTransaction(Mono.defer(() -> relationshipRepository.rejectFriendRequest(userId, senderId))
+                .flatMap(sender -> record(FriendshipEvent.betweenNonFriends(
+                        FriendshipEventType.REJECTED, userId, sender.userId()))
+                        .thenReturn(sender)));
     }
 
     public Mono<Void> deleteFriendship(String userId, String friendId) {
-        return relationshipRepository.deleteFriendship(userId, friendId).then();
+        return transactions.inTransaction(Mono.defer(() -> relationshipRepository.deleteFriendship(userId, friendId))
+                .flatMap(removed -> record(new FriendshipEvent(FriendshipEventType.REMOVED, userId, friendId,
+                        removed.closeness()))));
     }
 
     public Mono<Void> writeUser(UserCreatedEventDTO userCreatedEventDTO) {
@@ -125,27 +133,29 @@ public class RelationshipService {
         return change(userId, friendId, Friendship::declineProposal);
     }
 
-    /** Best effort: the friendship is already written, so a failed notification only gets logged. */
-    private Mono<Void> announce(FriendshipEventType type, String fromUserId, String toUserId) {
-        return Mono.defer(() -> relationshipRepository.findPerson(fromUserId, fromUserId))
-                .flatMap(from -> friendshipEventPublisher.publish(
-                        new FriendshipEvent(type, fromUserId, from.userName(), toUserId)))
-                .onErrorResume(error -> {
-                    LOG.log(System.Logger.Level.ERROR, "Friendship event {0} from {1} to {2} not published: {3}",
-                            type, fromUserId, toUserId, error.getMessage());
-                    return Mono.empty();
-                });
+    /** Joins the caller's transaction: the record commits with the change it describes. */
+    private Mono<Void> record(FriendshipEvent event) {
+        return Mono.defer(() -> outbox.append(event));
     }
 
-    /** Read, decide in the domain, then write only if nobody wrote in between. */
+    /**
+     * Read, decide in the domain, then write only if nobody wrote in between. A closeness that takes
+     * effect is recorded with the write; a mere proposal is not.
+     */
     private Mono<Friendship> change(String userId, String friendId, UnaryOperator<Friendship> decision) {
         return findFriendship(userId, friendId).flatMap(current -> {
             Friendship next = decision.apply(current);
             if (next.equals(current)) {
                 return Mono.just(current);
             }
-            return relationshipRepository.updateCloseness(userId, next, current.version())
-                    .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CLOSENESS_CONFLICT)));
+            boolean takesEffect = next.closeness() != current.closeness();
+            return transactions.inTransaction(Mono.defer(() ->
+                            relationshipRepository.updateCloseness(userId, next, current.version()))
+                    .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CLOSENESS_CONFLICT)))
+                    .flatMap(written -> takesEffect
+                            ? record(new FriendshipEvent(FriendshipEventType.CLOSENESS_CHANGED, userId, friendId,
+                                    current.closeness())).thenReturn(written)
+                            : Mono.just(written)));
         });
     }
 }

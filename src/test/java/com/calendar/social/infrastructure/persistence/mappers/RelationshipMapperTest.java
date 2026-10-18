@@ -1,5 +1,6 @@
 package com.calendar.social.infrastructure.persistence.mappers;
 
+import com.calendar.social.domain.models.Closeness;
 import com.calendar.social.domain.models.RelationshipDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.RelationshipDBDTO;
 import org.junit.jupiter.api.DisplayName;
@@ -25,7 +26,7 @@ class RelationshipMapperTest {
     @DisplayName("carries every field of an accepted, then deleted, relationship")
     void toRelationshipDTO_shouldMapEveryField() {
         RelationshipDBDTO deleted = new RelationshipDBDTO(
-                "ACCEPTED", "2025-06-01T10:00:00", "2025-06-02T11:00:00", "2025-06-03T12:00:00");
+                "ACCEPTED", "2025-06-01T10:00:00", "2025-06-02T11:00:00", "2025-06-03T12:00:00", "INTIMATE");
 
         RelationshipDTO dto = mapper.toRelationshipDTO(deleted);
 
@@ -34,6 +35,7 @@ class RelationshipMapperTest {
         assertEquals("2025-06-01T10:00:00", dto.createdAt());
         assertEquals("2025-06-02T11:00:00", dto.acceptedAt());
         assertEquals("2025-06-03T12:00:00", dto.rejectedAt());
+        assertEquals(Closeness.INTIMATE, dto.closeness());
     }
 
     @Test
@@ -41,7 +43,7 @@ class RelationshipMapperTest {
     void toRelationshipDTO_shouldPreserveNullDates() {
         // toString(null) in Cypher yields null, and a relationship that was never rejected has
         // no rejectedAt at all.
-        RelationshipDBDTO deleted = new RelationshipDBDTO("PENDING", null, null, null);
+        RelationshipDBDTO deleted = new RelationshipDBDTO("PENDING", null, null, null, null);
 
         RelationshipDTO dto = mapper.toRelationshipDTO(deleted);
 

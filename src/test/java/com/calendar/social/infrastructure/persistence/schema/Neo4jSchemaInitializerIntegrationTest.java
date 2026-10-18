@@ -63,12 +63,26 @@ class Neo4jSchemaInitializerIntegrationTest {
     }
 
     @Test
+    @DisplayName("the friendship outbox gets one clock and one record per version")
+    void start_shouldCreateTheFriendshipOutboxConstraints() {
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(neo4jClient.query(
+                        "SHOW CONSTRAINTS YIELD name WHERE name IN ['friendship_clock_name', "
+                                + "'friendship_outbox_version', 'migration_name'] RETURN count(*) AS c")
+                .fetchAs(Long.class).mappedBy((t, r) -> r.get("c").asLong()).one().block()).isEqualTo(3));
+
+        neo4jClient.query("CREATE (:FriendshipClock {name: 'friendship-events'})").run().block();
+        StepVerifier.create(neo4jClient.query("CREATE (:FriendshipClock {name: 'friendship-events'})").run())
+                .expectErrorSatisfies(error -> assertThat(error).hasStackTraceContaining("already exists"))
+                .verify();
+    }
+
+    @Test
     @DisplayName("IF NOT EXISTS: running it again, as every restart does, succeeds and changes nothing")
     void start_shouldSucceed_whenTheConstraintAlreadyExists() {
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(constraints()).isEqualTo(1));
 
-        StepVerifier.create(initializer.ensureConstraint()).expectNextCount(1).verifyComplete();
-        StepVerifier.create(initializer.ensureConstraint()).expectNextCount(1).verifyComplete();
+        StepVerifier.create(initializer.ensureSchema()).expectNextCount(1).verifyComplete();
+        StepVerifier.create(initializer.ensureSchema()).expectNextCount(1).verifyComplete();
 
         assertThat(constraints()).isEqualTo(1);
         assertThat(initializer.isRunning()).isTrue();

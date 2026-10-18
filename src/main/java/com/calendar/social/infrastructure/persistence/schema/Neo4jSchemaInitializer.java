@@ -1,19 +1,20 @@
 package com.calendar.social.infrastructure.persistence.schema;
 
 import lombok.extern.slf4j.Slf4j;
-import org.neo4j.driver.summary.ResultSummary;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.data.neo4j.core.ReactiveNeo4jClient;
 import org.springframework.stereotype.Component;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
+import java.util.List;
 
-/** Creates the uniqueness constraint on deletion markers at startup, retrying in the background. */
+/** Creates the graph's constraints and indexes at startup, retrying in the background. */
 @Slf4j
 @Component
 @ConditionalOnProperty(prefix = "app.neo4j.schema-init", name = "enabled", havingValue = "true",
@@ -22,6 +23,19 @@ public class Neo4jSchemaInitializer implements SmartLifecycle {
 
     static final String DELETED_USER_CONSTRAINT =
             "CREATE CONSTRAINT deleted_user_id IF NOT EXISTS FOR (d:DeletedUser) REQUIRE d.userId IS UNIQUE";
+    /** One clock: a concurrent first MERGE could otherwise create two, and hand out a version twice. */
+    static final String FRIENDSHIP_CLOCK_CONSTRAINT =
+            "CREATE CONSTRAINT friendship_clock_name IF NOT EXISTS FOR (c:FriendshipClock) REQUIRE c.name IS UNIQUE";
+    static final String FRIENDSHIP_OUTBOX_VERSION_CONSTRAINT = "CREATE CONSTRAINT friendship_outbox_version "
+            + "IF NOT EXISTS FOR (e:FriendshipOutboxEvent) REQUIRE e.version IS UNIQUE";
+    /** For the purge, which looks records up by publication date. */
+    static final String FRIENDSHIP_OUTBOX_PUBLISHED_INDEX = "CREATE INDEX friendship_outbox_published_at "
+            + "IF NOT EXISTS FOR (e:FriendshipOutboxEvent) ON (e.publishedAt)";
+    static final String MIGRATION_CONSTRAINT =
+            "CREATE CONSTRAINT migration_name IF NOT EXISTS FOR (m:Migration) REQUIRE m.name IS UNIQUE";
+
+    static final List<String> STATEMENTS = List.of(DELETED_USER_CONSTRAINT, FRIENDSHIP_CLOCK_CONSTRAINT,
+            FRIENDSHIP_OUTBOX_VERSION_CONSTRAINT, FRIENDSHIP_OUTBOX_PUBLISHED_INDEX, MIGRATION_CONSTRAINT);
 
     private final ReactiveNeo4jClient client;
     private final Duration firstBackoff;
@@ -41,15 +55,15 @@ public class Neo4jSchemaInitializer implements SmartLifecycle {
     @Override
     public void start() {
         // A self-driven startup task, like OutboxRelay in wely-users: nothing else subscribes to it.
-        task = ensureConstraint()
+        task = ensureSchema()
                 .retryWhen(Retry.backoff(Long.MAX_VALUE, firstBackoff)
                         .maxBackoff(maxBackoff)
                         .doBeforeRetry(signal -> log.warn(
-                                "Neo4j constraint deleted_user_id not ensured yet, retrying: {}",
+                                "Neo4j constraints not ensured yet, retrying: {}",
                                 signal.failure().getMessage())))
                 .subscribe(
-                        summary -> log.info("Neo4j constraint deleted_user_id ensured"),
-                        error -> log.error("Neo4j constraint deleted_user_id could not be ensured", error));
+                        count -> log.info("Neo4j constraints and indexes ensured ({})", count),
+                        error -> log.error("Neo4j constraints could not be ensured", error));
     }
 
     @Override
@@ -66,8 +80,10 @@ public class Neo4jSchemaInitializer implements SmartLifecycle {
         return task != null;
     }
 
-    /** Creates the constraint; IF NOT EXISTS makes a second run a no-op. */
-    Mono<ResultSummary> ensureConstraint() {
-        return Mono.defer(() -> client.query(DELETED_USER_CONSTRAINT).run());
+    /** Runs every statement in order; IF NOT EXISTS makes a second run a no-op. Returns how many ran. */
+    Mono<Long> ensureSchema() {
+        return Flux.fromIterable(STATEMENTS)
+                .concatMap(statement -> Mono.defer(() -> client.query(statement).run()))
+                .count();
     }
 }

@@ -3,7 +3,7 @@ package com.calendar.social.configuration;
 import com.calendar.social.domain.ports.CommunityRepository;
 import com.calendar.social.domain.ports.DeletedUserMarkers;
 import com.calendar.social.domain.ports.DeletedUsersSource;
-import com.calendar.social.domain.ports.FriendshipEventPublisher;
+import com.calendar.social.domain.ports.FriendshipEventOutbox;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.domain.ports.TransactionRunner;
 import com.calendar.social.domain.services.AccountErasureService;
@@ -25,8 +25,8 @@ class SocialApplicationConfigTest {
 
     @Test
     void relationshipService_shouldBuildTheDomainServiceFromItsPorts() {
-        assertThat(config.relationshipService(mock(RelationshipRepository.class), mock(FriendshipEventPublisher.class)))
-                .isNotNull();
+        assertThat(config.relationshipService(mock(RelationshipRepository.class), mock(FriendshipEventOutbox.class),
+                mock(TransactionRunner.class))).isNotNull();
     }
 
     @Test
@@ -41,7 +41,8 @@ class SocialApplicationConfigTest {
                 mock(RelationshipRepository.class), "");
 
         assertThat(config.accountErasureService(mock(DeletedUserMarkers.class), mock(CommunityRepository.class),
-                communityService, mock(RelationshipRepository.class), mock(TransactionRunner.class))).isNotNull();
+                communityService, mock(RelationshipRepository.class), mock(FriendshipEventOutbox.class),
+                mock(TransactionRunner.class))).isNotNull();
     }
 
     @Test

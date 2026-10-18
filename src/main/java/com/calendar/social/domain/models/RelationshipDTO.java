@@ -4,6 +4,7 @@ public record RelationshipDTO(
         String status,
         String createdAt,
         String acceptedAt,
-        String rejectedAt
+        String rejectedAt,
+        Closeness closeness
 ) {
 }

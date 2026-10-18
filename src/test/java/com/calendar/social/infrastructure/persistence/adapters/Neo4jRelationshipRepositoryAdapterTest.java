@@ -229,8 +229,8 @@ class Neo4jRelationshipRepositoryAdapterTest {
     void deleteFriendship_Success() {
         // The query returns a column projection, not a relationship object: Spring Data Neo4j
         // cannot map a bare RETURN r onto a @RelationshipProperties class.
-        RelationshipDBDTO deleted = new RelationshipDBDTO("ACCEPTED", null, null, null);
-        RelationshipDTO dto = new RelationshipDTO("FRIENDS", null, null, null);
+        RelationshipDBDTO deleted = new RelationshipDBDTO("ACCEPTED", null, null, null, "FRIEND");
+        RelationshipDTO dto = new RelationshipDTO("FRIENDS", null, null, null, Closeness.FRIEND);
         when(userNodeRepository.deleteFriendship("u1", "u2")).thenReturn(Mono.just(deleted));
         when(relationshipMapper.toRelationshipDTO(deleted)).thenReturn(dto);
 

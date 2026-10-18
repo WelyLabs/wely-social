@@ -2,7 +2,7 @@
 
 Service du **graphe social** de la plateforme [Wely Calendar](https://github.com/WelyLabs/wely-platform) : demandes d'amis, amitiés, statuts relationnels.
 
-It is the only service with graph persistence, and it consumes the `USER_CREATED`, `USER_MODIFIED` and `USER_DELETED` events produced by `wely-users`. It produces `FRIENDSHIP_CHANGED` for the notifications service.
+It is the only service with graph persistence, and it consumes the `USER_CREATED`, `USER_MODIFIED` and `USER_DELETED` events produced by `wely-users`. It produces `FRIENDSHIP_CHANGED`, through a transactional outbox, for wely-notifications and for wely-events' friendship projection.
 
 ---
 
@@ -234,7 +234,7 @@ The erasure (`AccountErasureService`) runs in **one Neo4j transaction**:
 
 Eligible means neither an already-deleted account nor a demo account (`ACCOUNT_DELETION_PROTECTED_USER_IDS`). The same rule decides whether other admins remain, so neither an erasure nor a live `leave` leaves a demo account as a community's only admin.
 
-Every step is idempotent: a replayed `USER_DELETED` changes nothing. `createdBy` stays on surviving communities, as a pseudonym that is never exposed. Nothing is published to friends: the person simply disappears from their lists.
+Every step is idempotent: a replayed `USER_DELETED` changes nothing. `createdBy` stays on surviving communities, as a pseudonym that is never exposed. Each former friendship gets a `REMOVED` record in the same transaction, without `fromUserName` (see [Produced events](#produced-events)); a replay finds no friendship left and records nothing. Friends are not notified: the person simply disappears from their lists.
 
 Once the node is deleted, a still-valid token can no longer write anything on the user's behalf: every write (requests, acceptances, community creation, joining, invitations) `MATCH`es the user's node.
 
@@ -242,24 +242,42 @@ Once the node is deleted, a still-valid token can no longer write anything on th
 
 Kafka is not the only path to an erasure. `DeletedUsersReconciliationLoop` pages wely-users' tombstones (`GET /user-service/internal/deleted-users`, 500 per page, header `X-Internal-Secret` from `DELETED_USERS_READER_SECRET`), on the wely-users Service directly: the gateway answers 404 for `/api/v1/*/internal/**`. The first pass runs 1 min after startup; the next one 24 h after a clean pass, or 1 h after a pass that failed or counted a failed erasure. A pass reads the next page only once the current one is reconciled, so a failed read never cuts an erasure short; a pass still running after 24 h (a hung query) is cut and retried 1 h later. Each pass runs the same idempotent erasure (`AccountReconciliationService`) for every tombstone whose marker is missing or has no `erasedAt`, and for every tombstone deleted less than 48 h ago, even if erased, which sweeps a write made meanwhile by a still-valid token. This repairs a `USER_DELETED` lost by a crash, skipped after its retries, or expired from the topic before it was read. Each pass logs one INFO line with its counts, and a failed erasure logs only the `businessId`. With a blank `USERS_API_URL` or `DELETED_USERS_READER_SECRET`, every pass fails without any call and the service runs on; `ACCOUNT_ERASURE_RECONCILIATION_ENABLED=false` turns the loop off.
 
-## Événements produits
+## Produced events
 
-**Topic** `FRIENDSHIP_CHANGED` (surchargeable par `FRIENDSHIP_TOPIC`) · clé `toUserId`
+**Topic** `FRIENDSHIP_CHANGED` (overridable with `FRIENDSHIP_TOPIC`) · Kafka key: the pair, both ids sorted and joined with `:`
 
 ```json
-{ "type": "REQUESTED", "fromUserId": "…", "fromUserName": "theo", "toUserId": "…" }
+{ "type": "ACCEPTED", "fromUserId": "…", "fromUserName": "theo", "toUserId": "…",
+  "closeness": "FRIEND", "previousCloseness": null,
+  "since": "2026-10-18T09:30:00Z", "version": 1760779800123, "occurredAt": "2026-10-18T09:30:00.123Z" }
 ```
 
-| `type` | Signification — `toUserId` est l'utilisateur à notifier |
+| `type` | Meaning |
 |---|---|
-| `REQUESTED` | `fromUser` a envoyé une demande d'ami à `toUser` |
-| `ACCEPTED` | `fromUser` a accepté la demande que `toUser` lui avait envoyée |
+| `REQUESTED` | `fromUser` sent a friend request to `toUser` |
+| `ACCEPTED` | `fromUser` accepted the request `toUser` had sent (from = acceptor, to = original requester) |
+| `REJECTED` | `fromUser` rejected the request `toUser` had sent |
+| `CANCELLED` | `fromUser` withdrew its request. Part of the contract; no operation emits it yet |
+| `REMOVED` | `fromUser` ended the friendship, or deleted its account |
+| `CLOSENESS_CHANGED` | a closeness took effect: an agreed step up, or a one-sided step down by `fromUser`. A mere proposal is not published |
+| `SNAPSHOT` | one-time backfill of an existing friendship, shaped like `ACCEPTED`; wely-notifications ignores it |
 
-`fromUserName` est le pseudo seul, sans hashtag. Les changements de proximité ne sont pas publiés.
+| Field | |
+|---|---|
+| `fromUserName` | the bare name, without hashtag; null when the actor's node is gone (account erasure) |
+| `closeness` | the pair's closeness **after** the change, read from the graph in the change's transaction: `FRIEND`, `CLOSE`, `INTIMATE`, or null when they are not friends (`REQUESTED`, `REJECTED`, `REMOVED`) |
+| `previousCloseness` | the pair's closeness **before** the change: null when they were not friends, and for `SNAPSHOT`. With `closeness`, it tells an upgrade from a downgrade |
+| `since` | when they became friends; null when they are not |
+| `version` | rises with every record of a pair, so a consumer drops a record whose version it already holds |
+| `occurredAt` | when the change was committed |
 
-Publication **au mieux** : elle a lieu après l'écriture dans Neo4j, et un échec est journalisé sans
-faire échouer la requête. Une notification peut donc se perdre si Kafka est indisponible — il n'y a
-pas d'outbox ici, contrairement à `wely-events`.
+### Guarantees
+
+- **Transactional outbox.** A change and its `(:FriendshipOutboxEvent:Unpublished)` record are written in the **same Neo4j transaction** (`TransactionRunner` over the `ReactiveNeo4jTransactionManager` declared in `Neo4jConfig`): both commit, or neither does. The best-effort publisher is gone.
+- **Version.** One `(:FriendshipClock)` node hands out `max(previous + 1, now in ms)` to each record, in the record's statement. Writing the clock locks it until commit, so versions follow commit order; the clock outlives relationships, so a pair deleted and re-created keeps rising, and the millisecond floor survives a wiped graph.
+- **Relay.** `FriendshipOutboxRelay` sends pending records every 2 s in version order, marks each one published once Kafka has acknowledged it (`producer.sync=true`), and stops a pass at the first failure. A failed record is retried on every pass **without limit**, never skipped, so no later record of the pair overtakes it; attempts and the last error are kept on the record, and each failure from the fifth on is logged as an error. Delivery is at-least-once: a crash between the send and the mark sends the record again, and consumers drop the duplicate by its version.
+- **Purge.** Published records are deleted after 7 days (hourly pass, 10 000 at most per pass). Pending records are never purged.
+- **Snapshot.** At startup, if no `(:Migration {name: <FRIENDSHIP_SNAPSHOT_NAME>})` exists, one `SNAPSHOT` record per accepted pair is enqueued and the marker created, in one statement. The topic keeps records for 3 days only: to rebuild a projection, or to feed a new consumer, set `FRIENDSHIP_SNAPSHOT_NAME` to a new value (`friendship-snapshot-v2`, …) and the next start re-runs it once.
 
 ---
 
@@ -279,7 +297,7 @@ pas d'outbox ici, contrairement à `wely-events`.
 | `SCL-VAL-001` | 400 | Validation du corps de requête, détail par champ |
 | `SCL-REQ-000` | *repris* | Chemin inconnu, méthode non autorisée |
 | `SCL-TEC-001` | 502 | Neo4j injoignable |
-| `SCL-TEC-002` | — | Kafka injoignable — interne : la publication étant au mieux, il n'atteint jamais le client |
+| `SCL-TEC-002` | — | Kafka unreachable — internal: raised by the outbox relay in the background, never returned to a client |
 | `SCL-TEC-003` | — | wely-users unreachable, or refusing the deleted-accounts listing — internal: raised by the reconciliation in the background, never returned to a client |
 
 **502 et non 500** pour l'indisponibilité du graphe : la requête était valide, c'est le magasin
@@ -326,6 +344,8 @@ client peut tester et un `timestamp` :
 | `DELETED_USERS_READER_SECRET` | Sent as `X-Internal-Secret` to wely-users' deleted-accounts listing. Empty by default: every pass then fails without a call |
 | `ACCOUNT_ERASURE_RECONCILIATION_ENABLED` | Runs the reconciliation loop, `true` by default |
 | `FRIENDSHIP_TOPIC` | Topic produit, `FRIENDSHIP_CHANGED` par défaut |
+| `FRIENDSHIP_OUTBOX_RELAY_ENABLED` | Runs the `FRIENDSHIP_CHANGED` outbox relay, `true` by default |
+| `FRIENDSHIP_SNAPSHOT_NAME` | Name of the one-time snapshot's marker, `friendship-snapshot-v1` by default; a new value re-runs the snapshot once |
 | `KEYCLOAK_ISSUER_URI` | Issuer public — validation de l'émetteur |
 | `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS interne — récupération des clés |
 
@@ -363,5 +383,5 @@ kubectl apply -k overlays/local --server-side
 
 - **La liste d'utilisateurs n'est pas paginée.** `MATCH (other:User)` parcourt tous les nœuds, sans `SKIP`/`LIMIT` ni filtre serveur — le filtrage est fait côté client. À remplacer par une recherche paramétrée, paginée et indexée sur `(userName, hashtag)`.
 - **A lost orphan `USER_DELETED` is not replayed.** The reactive binder acknowledges a record when it enters the stream, so a shutdown mid-erasure, or six failures in a row, lose it. The reconciliation repairs a user-requested deletion, but an abandoned registration leaves no tombstone in wely-users, so nothing re-runs its erasure.
+- **One undeliverable `FRIENDSHIP_CHANGED` record holds back the ones after it.** The relay retries in strict version order without limit, which keeps each pair in order but lets a broker outage, or a record Kafka keeps refusing, delay every later change until it goes out. The record's `attempts` and `lastError`, and the error log from the fifth attempt on, show it.
 - **Le champ `friendships` de `UserNodeEntity` est toujours vide** : il est mappé sur le type `FRIENDSHIP` alors que toutes les requêtes utilisent `RELATIONSHIP`.
-- **Pas de tests d'intégration** : les requêtes Cypher ne sont jamais exécutées contre un vrai Neo4j.

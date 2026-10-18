@@ -179,6 +179,22 @@ class AccountErasureServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("each former friendship leaves a nameless REMOVED record, committed with the erasure; pending ones none")
+    void erase_shouldRecordARemovalPerFormerFriendship() {
+        friends(ALICE, BOB, "bob", 2222);
+        friends(CAROL, ALICE, "alice", 1111);
+        relationships.sendFriendRequest(ALICE, "dave", 4444, null).block();
+
+        erase(ALICE);
+
+        assertThat(count("MATCH (e:FriendshipOutboxEvent:Unpublished {type: 'REMOVED', fromUserId: $id}) "
+                + "WHERE e.fromUserName IS NULL AND e.closeness IS NULL AND e.previousCloseness = 'FRIEND' "
+                + "AND e.toUserId IN [$bob, $carol] RETURN count(e) AS c",
+                Map.of("id", ALICE, "bob", BOB, "carol", CAROL))).isEqualTo(2);
+        assertThat(count("MATCH (e:FriendshipOutboxEvent) RETURN count(e) AS c")).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("the last admin's community goes to the longest-standing member, skipping one deleted meanwhile")
     void erase_shouldPromoteTheLongestStandingNonDeletedMember_whenTheUserWasTheLastAdmin() {
         Community club = club(ALICE, "Club");

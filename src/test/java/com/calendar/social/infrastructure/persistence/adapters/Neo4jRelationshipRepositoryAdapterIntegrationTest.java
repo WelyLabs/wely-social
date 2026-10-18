@@ -267,7 +267,11 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         adapter.acceptFriendRequest(BOB, ALICE).block();
 
         StepVerifier.create(adapter.deleteFriendship(ALICE, BOB))
-                .assertNext(deleted -> assertThat(deleted.status()).isEqualTo("ACCEPTED"))
+                .assertNext(deleted -> {
+                    assertThat(deleted.status()).isEqualTo("ACCEPTED");
+                    // Read before the DELETE: the closeness the friendship had, for the REMOVED record.
+                    assertThat(deleted.closeness()).isEqualTo(Closeness.FRIEND);
+                })
                 .verifyComplete();
 
         assertThat(statusBetween(ALICE, BOB)).isEqualTo("NONE");

@@ -4,9 +4,14 @@ import com.calendar.social.domain.models.Community;
 import com.calendar.social.domain.models.CommunityLeave;
 import com.calendar.social.domain.models.CommunityRole;
 import com.calendar.social.domain.models.CommunityVisibility;
+import com.calendar.social.domain.models.FriendshipEvent;
+import com.calendar.social.domain.models.FriendshipEventType;
 import com.calendar.social.domain.models.UserDeletedEventDTO;
+import com.calendar.social.domain.models.Closeness;
+import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.ports.CommunityRepository;
 import com.calendar.social.domain.ports.DeletedUserMarkers;
+import com.calendar.social.domain.ports.FriendshipEventOutbox;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.domain.ports.TransactionRunner;
 import com.calendar.social.exception.TechnicalErrorCode;
@@ -61,6 +66,9 @@ class AccountErasureServiceTest {
     private RelationshipRepository relationshipRepository;
 
     @Mock
+    private FriendshipEventOutbox outbox;
+
+    @Mock
     private TransactionRunner transactions;
 
     private final AtomicInteger transactionsOpened = new AtomicInteger();
@@ -80,8 +88,10 @@ class AccountErasureServiceTest {
         when(communityRepository.deleteInvitationsSentBy(USER)).thenReturn(Mono.just(0L));
         when(communityRepository.deleteEmptyCommunitiesCreatedBy(USER)).thenReturn(Mono.just(0L));
         when(relationshipRepository.delete(USER)).thenReturn(Mono.empty());
+        when(relationshipRepository.findFriendSummaries(USER)).thenReturn(Flux.empty());
+        when(outbox.append(any())).thenReturn(Mono.empty());
         service = new AccountErasureService(markers, communityRepository, communityService, relationshipRepository,
-                transactions, Clock.fixed(NOW, ZoneOffset.UTC));
+                outbox, transactions, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static Community membership(String communityId, CommunityRole role) {
@@ -116,7 +126,7 @@ class AccountErasureServiceTest {
         StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
 
         verify(transactions).inTransaction(any());
-        verifyNoInteractions(markers, communityRepository, communityService, relationshipRepository);
+        verifyNoInteractions(markers, communityRepository, communityService, relationshipRepository, outbox);
     }
 
     @Test
@@ -212,6 +222,59 @@ class AccountErasureServiceTest {
                 .verifyError(IllegalArgumentException.class);
         StepVerifier.create(service.erase(null)).verifyError(IllegalArgumentException.class);
 
-        verifyNoInteractions(transactions, markers, communityRepository, communityService, relationshipRepository);
+        verifyNoInteractions(transactions, markers, communityRepository, communityService, relationshipRepository,
+                outbox);
+    }
+
+    private static FriendSummary friend(String userId, Closeness closeness) {
+        return new FriendSummary(userId, userId, 1111, null, closeness, null, false);
+    }
+
+    @Test
+    @DisplayName("each former friendship is recorded as REMOVED by the user, with its closeness, after the delete")
+    void erase_shouldRecordARemovalPerFriend_afterDeletingTheNode() {
+        when(relationshipRepository.findFriendSummaries(USER)).thenReturn(Flux.just(friend("bob", Closeness.FRIEND), friend("carol", Closeness.INTIMATE)));
+
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
+
+        InOrder order = inOrder(markers, relationshipRepository, outbox, communityRepository);
+        order.verify(relationshipRepository).findFriendSummaries(USER);
+        order.verify(relationshipRepository).delete(USER);
+        order.verify(outbox).append(new FriendshipEvent(FriendshipEventType.REMOVED, USER, "bob", Closeness.FRIEND));
+        order.verify(outbox).append(new FriendshipEvent(FriendshipEventType.REMOVED, USER, "carol", Closeness.INTIMATE));
+        order.verify(communityRepository).deleteEmptyCommunitiesCreatedBy(USER);
+        order.verify(markers).markErased(USER, NOW);
+    }
+
+    @Test
+    @DisplayName("a replay finds no friendship any more, so it records nothing")
+    void erase_shouldRecordNothing_whenTheUserHasNoFriendLeft() {
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
+
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
+    void erase_shouldNotSetErasedAt_whenARemovalCannotBeRecorded() {
+        TechnicalException failure = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
+        when(relationshipRepository.findFriendSummaries(USER)).thenReturn(Flux.just(friend("bob", Closeness.FRIEND)));
+        when(outbox.append(any())).thenReturn(Mono.error(failure));
+
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyErrorSatisfies(error ->
+                assertThat(error).isSameAs(failure));
+
+        verify(markers, never()).markErased(anyString(), any());
+    }
+
+    @Test
+    void erase_shouldPropagateTheError_whenTheFriendsCannotBeRead() {
+        TechnicalException failure = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
+        when(relationshipRepository.findFriendSummaries(USER)).thenReturn(Flux.error(failure));
+
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyErrorSatisfies(error ->
+                assertThat(error).isSameAs(failure));
+
+        verify(relationshipRepository, never()).delete(anyString());
+        verifyNoInteractions(outbox);
     }
 }

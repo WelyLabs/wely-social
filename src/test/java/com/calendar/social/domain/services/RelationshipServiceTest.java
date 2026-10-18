@@ -2,11 +2,15 @@ package com.calendar.social.domain.services;
 
 import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.*;
-import com.calendar.social.domain.ports.FriendshipEventPublisher;
+import com.calendar.social.domain.ports.FriendshipEventOutbox;
 import com.calendar.social.domain.ports.RelationshipRepository;
+import com.calendar.social.domain.ports.TransactionRunner;
+import com.calendar.social.exception.TechnicalErrorCode;
+import com.calendar.social.exception.TechnicalException;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -28,7 +32,10 @@ class RelationshipServiceTest {
     private RelationshipRepository relationshipRepository;
 
     @Mock
-    private FriendshipEventPublisher friendshipEventPublisher;
+    private FriendshipEventOutbox outbox;
+
+    @Mock
+    private TransactionRunner transactions;
 
     @InjectMocks
     private RelationshipService relationshipService;
@@ -43,24 +50,33 @@ class RelationshipServiceTest {
         userNodeDTO = new UserNodeDTO(UUID.randomUUID().toString(), "testuser", 1234, "avatar.png");
         userSocialDTO = new UserSocialDTO(UUID.randomUUID().toString(), "testuser", 1234, "avatar.png", "FRIENDS", null);
         userCreatedEventDTO = new UserCreatedEventDTO(UUID.randomUUID().toString(), "testuser", 1234, "avatar.png");
+        // Runs the work as is; the tests that need to see the boundary replace it.
+        lenient().when(transactions.inTransaction(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(outbox.append(any())).thenReturn(Mono.empty());
+    }
+
+    private static final TechnicalException DATABASE_DOWN = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
+
+    private static FriendshipEvent event(FriendshipEventType type, String from, String to) {
+        return new FriendshipEvent(type, from, to, null);
+    }
+
+    private static FriendshipEvent event(FriendshipEventType type, String from, String to, Closeness previous) {
+        return new FriendshipEvent(type, from, to, previous);
     }
 
     @Test
-    void sendFriendRequest_Success() {
+    void sendFriendRequest_shouldRecordTheRequest_fromTheSenderToTheRecipient() {
         when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(true));
         when(relationshipRepository.sendFriendRequest(anyString(), eq("target"), eq(5678), isNull()))
                 .thenReturn(Mono.just(userNodeDTO));
-        stubSelf("senderId", "sender");
-        when(friendshipEventPublisher.publish(any())).thenReturn(Mono.empty());
 
         StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
                 .expectNext(userNodeDTO)
                 .verifyComplete();
 
-        verify(relationshipRepository).existsByUserNameAndHashtag("target", 5678);
         verify(relationshipRepository).sendFriendRequest("senderId", "target", 5678, null);
-        verify(friendshipEventPublisher).publish(
-                new FriendshipEvent(FriendshipEventType.REQUESTED, "senderId", "sender", userNodeDTO.userId()));
+        verify(outbox).append(event(FriendshipEventType.REQUESTED, "senderId", userNodeDTO.userId()));
     }
 
     @Test
@@ -72,50 +88,12 @@ class RelationshipServiceTest {
                         ((BusinessException) throwable).getErrorCode() == BusinessErrorCode.USER_DOES_NOT_EXIST)
                 .verify();
 
-        verify(relationshipRepository).existsByUserNameAndHashtag("target", 5678);
         verify(relationshipRepository, never()).sendFriendRequest(anyString(), anyString(), anyInt(), any());
-        verifyNoInteractions(friendshipEventPublisher);
+        verifyNoInteractions(outbox);
     }
 
     @Test
-    void acceptFriendRequest_Success() {
-        when(relationshipRepository.acceptFriendRequest("userId", "senderId")).thenReturn(Mono.just(userNodeDTO));
-        stubSelf("userId", "accepter");
-        when(friendshipEventPublisher.publish(any())).thenReturn(Mono.empty());
-
-        StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
-                .expectNext(userNodeDTO)
-                .verifyComplete();
-
-        verify(friendshipEventPublisher).publish(
-                new FriendshipEvent(FriendshipEventType.ACCEPTED, "userId", "accepter", userNodeDTO.userId()));
-    }
-
-    @Test
-    void acceptFriendRequest_shouldNotPublish_whenThereIsNothingToAccept() {
-        BusinessException nothing = new BusinessException(BusinessErrorCode.ACCEPT_FRIEND_REQUEST_FAILURE);
-        when(relationshipRepository.acceptFriendRequest("userId", "senderId")).thenReturn(Mono.error(nothing));
-
-        StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
-                .expectErrorMatches(e -> e == nothing)
-                .verify();
-
-        verifyNoInteractions(friendshipEventPublisher);
-    }
-
-    @Test
-    void acceptFriendRequest_shouldSucceed_whenPublishingFails() {
-        when(relationshipRepository.acceptFriendRequest("userId", "senderId")).thenReturn(Mono.just(userNodeDTO));
-        stubSelf("userId", "accepter");
-        when(friendshipEventPublisher.publish(any())).thenReturn(Mono.error(new IllegalStateException("broker down")));
-
-        StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
-                .expectNext(userNodeDTO)
-                .verifyComplete();
-    }
-
-    @Test
-    void sendFriendRequest_shouldNotPublish_whenTheRequestCannotBeCreated() {
+    void sendFriendRequest_shouldRecordNothing_whenTheRequestCannotBeCreated() {
         BusinessException related = new BusinessException(BusinessErrorCode.SEND_FRIEND_REQUEST_FAILURE);
         when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(true));
         when(relationshipRepository.sendFriendRequest("senderId", "target", 5678, null)).thenReturn(Mono.error(related));
@@ -124,53 +102,151 @@ class RelationshipServiceTest {
                 .expectErrorMatches(e -> e == related)
                 .verify();
 
-        verifyNoInteractions(friendshipEventPublisher);
+        verifyNoInteractions(outbox);
     }
 
     @Test
-    void sendFriendRequest_shouldSucceed_whenPublishingFails() {
+    @DisplayName("a record that cannot be written fails the request, which its transaction then rolls back")
+    void sendFriendRequest_shouldFail_whenTheRecordCannotBeWritten() {
         when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(true));
         when(relationshipRepository.sendFriendRequest("senderId", "target", 5678, null))
                 .thenReturn(Mono.just(userNodeDTO));
-        stubSelf("senderId", "sender");
-        when(friendshipEventPublisher.publish(any())).thenReturn(Mono.error(new IllegalStateException("broker down")));
+        when(outbox.append(any())).thenReturn(Mono.error(DATABASE_DOWN));
 
         StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
-                .expectNext(userNodeDTO)
-                .verifyComplete();
+                .expectErrorMatches(e -> e == DATABASE_DOWN)
+                .verify();
     }
 
     @Test
-    void sendFriendRequest_shouldSucceed_whenTheSendersNameCannotBeRead() {
+    @DisplayName("the request and its record are written inside the transaction, nothing outside it")
+    void sendFriendRequest_shouldWriteOnlyInsideTheTransaction() {
         when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(true));
-        when(relationshipRepository.sendFriendRequest("senderId", "target", 5678, null))
-                .thenReturn(Mono.just(userNodeDTO));
-        when(relationshipRepository.findPerson("senderId", "senderId"))
-                .thenReturn(Mono.error(new IllegalStateException("graph down")));
+        // A runner that never runs the work: any write seen now would have happened outside it.
+        when(transactions.inTransaction(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
-                .expectNext(userNodeDTO)
-                .verifyComplete();
+        StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null)).verifyComplete();
 
-        verifyNoInteractions(friendshipEventPublisher);
+        verify(relationshipRepository, never()).sendFriendRequest(anyString(), anyString(), anyInt(), any());
+        verifyNoInteractions(outbox);
     }
 
     @Test
-    void rejectFriendRequest_Success() {
+    @DisplayName("an acceptance goes from the acceptor to the original requester")
+    void acceptFriendRequest_shouldRecordTheAcceptance_fromTheAcceptorToTheRequester() {
+        when(relationshipRepository.acceptFriendRequest("userId", "senderId")).thenReturn(Mono.just(userNodeDTO));
+
+        StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
+                .expectNext(userNodeDTO)
+                .verifyComplete();
+
+        verify(outbox).append(event(FriendshipEventType.ACCEPTED, "userId", userNodeDTO.userId()));
+    }
+
+    @Test
+    void acceptFriendRequest_shouldRecordNothing_whenThereIsNothingToAccept() {
+        BusinessException nothing = new BusinessException(BusinessErrorCode.ACCEPT_FRIEND_REQUEST_FAILURE);
+        when(relationshipRepository.acceptFriendRequest("userId", "senderId")).thenReturn(Mono.error(nothing));
+
+        StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
+                .expectErrorMatches(e -> e == nothing)
+                .verify();
+
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
+    void acceptFriendRequest_shouldFail_whenTheRecordCannotBeWritten() {
+        when(relationshipRepository.acceptFriendRequest("userId", "senderId")).thenReturn(Mono.just(userNodeDTO));
+        when(outbox.append(any())).thenReturn(Mono.error(DATABASE_DOWN));
+
+        StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
+                .expectErrorMatches(e -> e == DATABASE_DOWN)
+                .verify();
+    }
+
+    @Test
+    void acceptFriendRequest_shouldWriteOnlyInsideTheTransaction() {
+        when(transactions.inTransaction(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId")).verifyComplete();
+
+        verifyNoInteractions(relationshipRepository, outbox);
+    }
+
+    @Test
+    void rejectFriendRequest_shouldRecordTheRejection_fromTheRejecterToTheRequester() {
         when(relationshipRepository.rejectFriendRequest("userId", "senderId")).thenReturn(Mono.just(userNodeDTO));
 
         StepVerifier.create(relationshipService.rejectFriendRequest("userId", "senderId"))
                 .expectNext(userNodeDTO)
                 .verifyComplete();
+
+        verify(outbox).append(event(FriendshipEventType.REJECTED, "userId", userNodeDTO.userId()));
     }
 
     @Test
-    void deleteFriendship_Success() {
+    void rejectFriendRequest_shouldRecordNothing_whenThereIsNothingToReject() {
+        BusinessException nothing = new BusinessException(BusinessErrorCode.REJECT_FRIEND_REQUEST_FAILURE);
+        when(relationshipRepository.rejectFriendRequest("userId", "senderId")).thenReturn(Mono.error(nothing));
+
+        StepVerifier.create(relationshipService.rejectFriendRequest("userId", "senderId"))
+                .expectErrorMatches(e -> e == nothing)
+                .verify();
+
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
+    void rejectFriendRequest_shouldWriteOnlyInsideTheTransaction() {
+        when(transactions.inTransaction(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(relationshipService.rejectFriendRequest("userId", "senderId")).verifyComplete();
+
+        verifyNoInteractions(relationshipRepository, outbox);
+    }
+
+    @Test
+    void deleteFriendship_shouldRecordTheRemoval_fromTheOneWhoEndedIt_withTheClosenessItHad() {
         when(relationshipRepository.deleteFriendship("userId", "friendId"))
-                .thenReturn(Mono.just(new RelationshipDTO(UUID.randomUUID().toString(), "USER", "FRIEND", "FRIENDS")));
+                .thenReturn(Mono.just(new RelationshipDTO("ACCEPTED", null, null, null, Closeness.CLOSE)));
 
         StepVerifier.create(relationshipService.deleteFriendship("userId", "friendId"))
                 .verifyComplete();
+
+        verify(outbox).append(event(FriendshipEventType.REMOVED, "userId", "friendId", Closeness.CLOSE));
+    }
+
+    @Test
+    void deleteFriendship_shouldRecordNothing_whenTheyWereNotFriends() {
+        BusinessException nothing = new BusinessException(BusinessErrorCode.DELETE_FRIENDSHIP_FAILURE);
+        when(relationshipRepository.deleteFriendship("userId", "friendId")).thenReturn(Mono.error(nothing));
+
+        StepVerifier.create(relationshipService.deleteFriendship("userId", "friendId"))
+                .expectErrorMatches(e -> e == nothing)
+                .verify();
+
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
+    void deleteFriendship_shouldFail_whenTheRecordCannotBeWritten() {
+        when(relationshipRepository.deleteFriendship("userId", "friendId"))
+                .thenReturn(Mono.just(new RelationshipDTO("ACCEPTED", null, null, null, Closeness.CLOSE)));
+        when(outbox.append(any())).thenReturn(Mono.error(DATABASE_DOWN));
+
+        StepVerifier.create(relationshipService.deleteFriendship("userId", "friendId"))
+                .expectErrorMatches(e -> e == DATABASE_DOWN)
+                .verify();
+    }
+
+    @Test
+    void deleteFriendship_shouldWriteOnlyInsideTheTransaction() {
+        when(transactions.inTransaction(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(relationshipService.deleteFriendship("userId", "friendId")).verifyComplete();
+
+        verifyNoInteractions(relationshipRepository, outbox);
     }
 
     @Test
@@ -195,8 +271,6 @@ class RelationshipServiceTest {
         when(relationshipRepository.existsByUserNameAndHashtag("target", 5678)).thenReturn(Mono.just(true));
         when(relationshipRepository.sendFriendRequest("senderId", "target", 5678, "event-1"))
                 .thenReturn(Mono.just(userNodeDTO));
-        stubSelf("senderId", "sender");
-        when(friendshipEventPublisher.publish(any())).thenReturn(Mono.empty());
 
         StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", "event-1"))
                 .expectNext(userNodeDTO)
@@ -289,8 +363,8 @@ class RelationshipServiceTest {
                 .expectNext(written)
                 .verifyComplete();
 
-        // Closeness changes are not friendship events.
-        verifyNoInteractions(friendshipEventPublisher);
+        // A mere proposal changes no closeness yet: nothing to record.
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -312,6 +386,46 @@ class RelationshipServiceTest {
         StepVerifier.create(relationshipService.requestCloseness("alice", "bob", Closeness.INTIMATE))
                 .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.CLOSENESS_CONFLICT)
                 .verify();
+
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
+    @DisplayName("a one-sided step down takes effect at once, and is recorded")
+    void requestCloseness_shouldRecordTheChange_whenAStepDownTakesEffect() {
+        Friendship close = new Friendship("bob", Closeness.CLOSE, null, false, 4, null);
+        when(relationshipRepository.findFriendship("alice", "bob")).thenReturn(Mono.just(close));
+        when(relationshipRepository.updateCloseness("alice", friends, 4)).thenReturn(Mono.just(friends));
+
+        StepVerifier.create(relationshipService.requestCloseness("alice", "bob", Closeness.FRIEND))
+                .expectNext(friends)
+                .verifyComplete();
+
+        verify(outbox).append(event(FriendshipEventType.CLOSENESS_CHANGED, "alice", "bob", Closeness.CLOSE));
+    }
+
+    @Test
+    void requestCloseness_shouldFail_whenTheRecordCannotBeWritten() {
+        Friendship close = new Friendship("bob", Closeness.CLOSE, null, false, 4, null);
+        when(relationshipRepository.findFriendship("alice", "bob")).thenReturn(Mono.just(close));
+        when(relationshipRepository.updateCloseness("alice", friends, 4)).thenReturn(Mono.just(friends));
+        when(outbox.append(any())).thenReturn(Mono.error(DATABASE_DOWN));
+
+        StepVerifier.create(relationshipService.requestCloseness("alice", "bob", Closeness.FRIEND))
+                .expectErrorMatches(e -> e == DATABASE_DOWN)
+                .verify();
+    }
+
+    @Test
+    void requestCloseness_shouldWriteOnlyInsideTheTransaction() {
+        Friendship close = new Friendship("bob", Closeness.CLOSE, null, false, 4, null);
+        when(relationshipRepository.findFriendship("alice", "bob")).thenReturn(Mono.just(close));
+        when(transactions.inTransaction(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(relationshipService.requestCloseness("alice", "bob", Closeness.FRIEND)).verifyComplete();
+
+        verify(relationshipRepository, never()).updateCloseness(anyString(), any(), anyLong());
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -333,6 +447,8 @@ class RelationshipServiceTest {
         StepVerifier.create(relationshipService.acceptCloseness("alice", "bob"))
                 .expectNext(agreed)
                 .verifyComplete();
+
+        verify(outbox).append(event(FriendshipEventType.CLOSENESS_CHANGED, "alice", "bob", Closeness.FRIEND));
     }
 
     @Test
@@ -353,6 +469,9 @@ class RelationshipServiceTest {
         StepVerifier.create(relationshipService.declineCloseness("alice", "bob"))
                 .expectNext(friends)
                 .verifyComplete();
+
+        // The closeness stays what it was: nothing to record.
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -413,11 +532,5 @@ class RelationshipServiceTest {
                 .verify();
 
         verify(relationshipRepository, never()).findMutualFriends(anyString(), anyString(), anyInt());
-    }
-
-    // The caller's own profile, which is where the notified name comes from.
-    private void stubSelf(String userId, String userName) {
-        when(relationshipRepository.findPerson(userId, userId)).thenReturn(Mono.just(
-                new Person(userId, userName, 1234, null, RelationStatus.SELF, null, null, false, null)));
     }
 }

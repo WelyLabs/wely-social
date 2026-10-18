@@ -17,5 +17,6 @@ public record RelationshipDBDTO(
         String status,
         String createdAt,
         String acceptedAt,
-        String rejectedAt
+        String rejectedAt,
+        String closeness
 ) {}

@@ -3,7 +3,7 @@ package com.calendar.social.configuration;
 import com.calendar.social.domain.ports.CommunityRepository;
 import com.calendar.social.domain.ports.DeletedUserMarkers;
 import com.calendar.social.domain.ports.DeletedUsersSource;
-import com.calendar.social.domain.ports.FriendshipEventPublisher;
+import com.calendar.social.domain.ports.FriendshipEventOutbox;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.domain.ports.TransactionRunner;
 import com.calendar.social.domain.services.AccountErasureService;
@@ -33,8 +33,9 @@ public class SocialApplicationConfig {
     @Bean
     public RelationshipService relationshipService(
             RelationshipRepository relationshipRepository,
-            FriendshipEventPublisher friendshipEventPublisher) {
-        return new RelationshipService(relationshipRepository, friendshipEventPublisher);
+            FriendshipEventOutbox friendshipEventOutbox,
+            TransactionRunner transactions) {
+        return new RelationshipService(relationshipRepository, friendshipEventOutbox, transactions);
     }
 
     @Bean
@@ -53,9 +54,10 @@ public class SocialApplicationConfig {
                                                        CommunityRepository communityRepository,
                                                        CommunityService communityService,
                                                        RelationshipRepository relationshipRepository,
+                                                       FriendshipEventOutbox friendshipEventOutbox,
                                                        TransactionRunner transactions) {
         return new AccountErasureService(markers, communityRepository, communityService, relationshipRepository,
-                transactions, Clock.systemUTC());
+                friendshipEventOutbox, transactions, Clock.systemUTC());
     }
 
     @Bean
