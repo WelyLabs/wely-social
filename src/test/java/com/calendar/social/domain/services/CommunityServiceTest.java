@@ -10,6 +10,7 @@ import com.calendar.social.domain.models.CommunityVisibility;
 import com.calendar.social.domain.models.Closeness;
 import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.ports.CommunityRepository;
+import com.calendar.social.domain.ports.MediaStore;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
@@ -19,6 +20,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
@@ -29,11 +32,18 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -46,6 +56,7 @@ class CommunityServiceTest {
     private static final String ID = "c1";
     private static final String TOKEN = "token-abcdefghijklmnop";
     private static final String DEMO = "demo";
+    private static final String FOLDER = "communities/c1/";
 
     @Mock
     private CommunityRepository repository;
@@ -53,16 +64,19 @@ class CommunityServiceTest {
     @Mock
     private RelationshipRepository relationships;
 
+    @Mock
+    private MediaStore media;
+
     private CommunityService service;
 
     @BeforeEach
     void setUp() {
-        service = new CommunityService(repository, relationships, Clock.fixed(NOW, ZoneOffset.UTC), () -> TOKEN,
+        service = new CommunityService(repository, relationships, media, Clock.fixed(NOW, ZoneOffset.UTC), () -> TOKEN,
                 Set.of(DEMO));
     }
 
     private static Community community(CommunityVisibility visibility, CommunityRole role, long members) {
-        return new Community(ID, "Club", null, List.of(), visibility, NOW, members, role, List.of(), 0);
+        return new Community(ID, "Club", null, List.of(), visibility, NOW, members, role, List.of(), 0, null);
     }
 
     private static CommunityDraft draft() {
@@ -145,9 +159,11 @@ class CommunityServiceTest {
     void delete_shouldDelete_forAnAdmin() {
         given(community(CommunityVisibility.PRIVATE, CommunityRole.ADMIN, 3));
         when(repository.delete(ID)).thenReturn(Mono.empty());
+        when(media.deletePrefix(FOLDER)).thenReturn(Mono.empty());
 
         StepVerifier.create(service.delete(ME, ID)).verifyComplete();
         verify(repository).delete(ID);
+        verify(media).deletePrefix(FOLDER);
     }
 
     @Test
@@ -307,6 +323,7 @@ class CommunityServiceTest {
         when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.just(0L));
         when(repository.findLongestStandingMember(ID, Set.of(ME, DEMO))).thenReturn(Mono.empty());
         when(repository.delete(ID)).thenReturn(Mono.empty());
+        when(media.deletePrefix(FOLDER)).thenReturn(Mono.empty());
 
         StepVerifier.create(service.leave(ME, ID, true)).expectNext(CommunityLeave.deleted()).verifyComplete();
         verify(repository, never()).removeMember(anyString(), anyString());
@@ -362,6 +379,7 @@ class CommunityServiceTest {
     void leave_shouldDeleteTheCommunity_whenTheOnlyMemberConfirms() {
         given(community(CommunityVisibility.PRIVATE, CommunityRole.ADMIN, 1));
         when(repository.delete(ID)).thenReturn(Mono.empty());
+        when(media.deletePrefix(FOLDER)).thenReturn(Mono.empty());
 
         StepVerifier.create(service.leave(ME, ID, true)).expectNext(CommunityLeave.deleted()).verifyComplete();
     }
@@ -683,5 +701,236 @@ class CommunityServiceTest {
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.INVITATION_EXPIRED))
                 .verify();
         verify(repository, never()).addMember(anyString(), anyString(), any(), any());
+    }
+
+    // --- pictures --------------------------------------------------------------------------------
+
+    private static final String OLD_KEY = "communities/c1/picture-old.jpg";
+    private static final byte[] PICTURE = {1, 2, 3};
+
+    private static Community withPicture(CommunityRole role, String pictureKey) {
+        return new Community(ID, "Club", null, List.of(), CommunityVisibility.PUBLIC, NOW, 3, role, List.of(), 0, pictureKey);
+    }
+
+    private static boolean isNewKey(String key) {
+        return key != null && key.startsWith(FOLDER + "picture-") && !key.equals(OLD_KEY);
+    }
+
+    @Test
+    void setPicture_shouldStoreThenPointAtTheNewPicture_thenDiscardTheOldOne() {
+        given(withPicture(CommunityRole.ADMIN, OLD_KEY));
+        Community updated = withPicture(CommunityRole.ADMIN, "communities/c1/picture-new.jpg");
+        when(media.store(anyString(), any())).thenReturn(Mono.empty());
+        when(repository.setPicture(eq(ID), eq(ME), anyString())).thenReturn(Mono.just(updated));
+        when(media.delete(OLD_KEY)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.setPicture(ME, ID, PICTURE)).expectNext(updated).verifyComplete();
+
+        ArgumentCaptor<String> stored = ArgumentCaptor.forClass(String.class);
+        InOrder order = inOrder(media, repository);
+        order.verify(media).store(stored.capture(), eq(PICTURE));
+        order.verify(repository).setPicture(ID, ME, stored.getValue());
+        order.verify(media).delete(OLD_KEY);
+        assertThat(isNewKey(stored.getValue())).isTrue();
+    }
+
+    @Test
+    void setPicture_shouldDiscardNothing_whenTheCommunityHadNoPicture() {
+        given(withPicture(CommunityRole.ADMIN, null));
+        when(media.store(anyString(), any())).thenReturn(Mono.empty());
+        when(repository.setPicture(eq(ID), eq(ME), anyString())).thenReturn(Mono.just(withPicture(CommunityRole.ADMIN, "k")));
+
+        StepVerifier.create(service.setPicture(ME, ID, PICTURE)).expectNextCount(1).verifyComplete();
+        verify(media, never()).delete(anyString());
+    }
+
+    @Test
+    void setPicture_shouldRefuseAMember_withoutStoringAnything() {
+        given(withPicture(CommunityRole.MEMBER, null));
+
+        StepVerifier.create(service.setPicture(ME, ID, PICTURE))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_ADMIN_REQUIRED))
+                .verify();
+        verifyNoInteractions(media);
+        verify(repository, never()).setPicture(anyString(), anyString(), any());
+    }
+
+    @Test
+    void setPicture_shouldLeaveTheCommunityAlone_whenThePictureIsRefused() {
+        given(withPicture(CommunityRole.ADMIN, OLD_KEY));
+        when(media.store(anyString(), any()))
+                .thenReturn(Mono.error(new BusinessException(BusinessErrorCode.COMMUNITY_PICTURE_INVALID)));
+
+        StepVerifier.create(service.setPicture(ME, ID, PICTURE))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_PICTURE_INVALID))
+                .verify();
+        verify(repository, never()).setPicture(anyString(), anyString(), any());
+        verify(media, never()).delete(anyString());
+    }
+
+    @Test
+    @DisplayName("the graph failing after the upload discards the new picture and keeps the old one")
+    void setPicture_shouldDiscardTheNewPicture_whenTheGraphFails() {
+        given(withPicture(CommunityRole.ADMIN, OLD_KEY));
+        TechnicalException failure = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
+        when(media.store(anyString(), any())).thenReturn(Mono.empty());
+        when(repository.setPicture(eq(ID), eq(ME), anyString())).thenReturn(Mono.error(failure));
+        when(media.delete(anyString())).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.setPicture(ME, ID, PICTURE)).expectErrorMatches(error -> error == failure).verify();
+
+        ArgumentCaptor<String> discarded = ArgumentCaptor.forClass(String.class);
+        verify(media).delete(discarded.capture());
+        assertThat(isNewKey(discarded.getValue())).isTrue();
+    }
+
+    @Test
+    void setPicture_shouldAnswerNotFound_andDiscardTheNewPicture_whenTheCommunityWentMeanwhile() {
+        given(withPicture(CommunityRole.ADMIN, null));
+        when(media.store(anyString(), any())).thenReturn(Mono.empty());
+        when(repository.setPicture(eq(ID), eq(ME), anyString())).thenReturn(Mono.empty());
+        when(media.delete(anyString())).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.setPicture(ME, ID, PICTURE))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_NOT_FOUND))
+                .verify();
+        verify(media).delete(anyString());
+    }
+
+    @Test
+    void setPicture_shouldSucceed_whenTheOldPictureCannotBeDiscarded() {
+        given(withPicture(CommunityRole.ADMIN, OLD_KEY));
+        Community updated = withPicture(CommunityRole.ADMIN, "k");
+        when(media.store(anyString(), any())).thenReturn(Mono.empty());
+        when(repository.setPicture(eq(ID), eq(ME), anyString())).thenReturn(Mono.just(updated));
+        when(media.delete(OLD_KEY)).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
+
+        StepVerifier.create(service.setPicture(ME, ID, PICTURE)).expectNext(updated).verifyComplete();
+    }
+
+    @Test
+    void removePicture_shouldClearItThenDiscardIt() {
+        given(withPicture(CommunityRole.ADMIN, OLD_KEY));
+        Community cleared = withPicture(CommunityRole.ADMIN, null);
+        when(repository.setPicture(ID, ME, null)).thenReturn(Mono.just(cleared));
+        when(media.delete(OLD_KEY)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.removePicture(ME, ID)).expectNext(cleared).verifyComplete();
+
+        InOrder order = inOrder(repository, media);
+        order.verify(repository).setPicture(ID, ME, null);
+        order.verify(media).delete(OLD_KEY);
+    }
+
+    @Test
+    void removePicture_shouldChangeNothing_whenThereIsNoPicture() {
+        Community bare = withPicture(CommunityRole.ADMIN, null);
+        given(bare);
+
+        StepVerifier.create(service.removePicture(ME, ID)).expectNext(bare).verifyComplete();
+        verify(repository, never()).setPicture(anyString(), anyString(), any());
+        verifyNoInteractions(media);
+    }
+
+    @Test
+    void removePicture_shouldRefuseAMember() {
+        given(withPicture(CommunityRole.MEMBER, OLD_KEY));
+
+        StepVerifier.create(service.removePicture(ME, ID))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_ADMIN_REQUIRED))
+                .verify();
+        verifyNoInteractions(media);
+    }
+
+    @Test
+    void removePicture_shouldAnswerNotFound_whenTheCommunityWentMeanwhile() {
+        given(withPicture(CommunityRole.ADMIN, OLD_KEY));
+        when(repository.setPicture(ID, ME, null)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.removePicture(ME, ID))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_NOT_FOUND))
+                .verify();
+        verifyNoInteractions(media);
+    }
+
+    @Test
+    void pictureUrls_shouldNotCallWelyMedia_whenNoCommunityHasAPicture() {
+        StepVerifier.create(service.pictureUrls(List.of(withPicture(null, null)))).expectNext(Map.of()).verifyComplete();
+        verifyNoInteractions(media);
+    }
+
+    @Test
+    void pictureUrls_shouldSignEachKeyOnce() {
+        when(media.urls(List.of(OLD_KEY))).thenReturn(Mono.just(Map.of(OLD_KEY, "https://media/old")));
+
+        StepVerifier.create(service.pictureUrls(List.of(withPicture(null, OLD_KEY), withPicture(null, OLD_KEY),
+                        withPicture(null, null))))
+                .expectNext(Map.of(OLD_KEY, "https://media/old"))
+                .verifyComplete();
+    }
+
+    @Test
+    void pictureUrls_shouldSignInCallsOfAtMost200Keys() {
+        List<Community> many = IntStream.range(0, CommunityService.MAX_URLS_PER_CALL + 1)
+                .mapToObj(i -> withPicture(null, "communities/c" + i + "/p.jpg"))
+                .toList();
+        when(media.urls(any())).thenAnswer(invocation -> {
+            List<String> keys = List.copyOf(invocation.getArgument(0));
+            return Mono.just(keys.stream().collect(Collectors.toMap(k -> k, k -> "u:" + k)));
+        });
+
+        StepVerifier.create(service.pictureUrls(many))
+                .assertNext(urls -> assertThat(urls).hasSize(CommunityService.MAX_URLS_PER_CALL + 1))
+                .verifyComplete();
+        verify(media, times(2)).urls(any());
+    }
+
+    @Test
+    @DisplayName("wely-media failing costs the pictures, not the page")
+    void pictureUrls_shouldAnswerNoUrl_whenSigningFails() {
+        when(media.urls(any())).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
+
+        StepVerifier.create(service.pictureUrls(List.of(withPicture(null, OLD_KEY)))).expectNext(Map.of()).verifyComplete();
+    }
+
+    @Test
+    void discardPictures_shouldPurgeEachCommunitysFolderOnce() {
+        when(media.deletePrefix(anyString())).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.discardPictures(List.of("c1", "c2", "c1"))).verifyComplete();
+
+        verify(media).deletePrefix("communities/c1/");
+        verify(media).deletePrefix("communities/c2/");
+    }
+
+    @Test
+    void discardPictures_shouldSwallowAFailure_andGoOnWithTheOthers() {
+        when(media.deletePrefix("communities/c1/"))
+                .thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
+        when(media.deletePrefix("communities/c2/")).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.discardPictures(List.of("c1", "c2"))).verifyComplete();
+        verify(media).deletePrefix("communities/c2/");
+    }
+
+    @Test
+    void delete_shouldStillSucceed_whenThePicturesCannotBePurged() {
+        given(community(CommunityVisibility.PRIVATE, CommunityRole.ADMIN, 3));
+        when(repository.delete(ID)).thenReturn(Mono.empty());
+        when(media.deletePrefix(FOLDER)).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
+
+        StepVerifier.create(service.delete(ME, ID)).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("an erasure's deletion runs in its transaction: the pictures are left for after the commit")
+    void leaveOnErasure_shouldNotTouchThePictures_whenItDeletesTheCommunity() {
+        when(repository.delete(ID)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.leaveOnErasure(ME, new Community(ID, "Club", null, List.of(),
+                        CommunityVisibility.PUBLIC, NOW, 1, CommunityRole.ADMIN, List.of(), 0, OLD_KEY)))
+                .expectNext(CommunityLeave.deleted())
+                .verifyComplete();
+        verifyNoInteractions(media);
     }
 }

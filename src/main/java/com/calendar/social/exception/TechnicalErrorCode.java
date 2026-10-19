@@ -31,6 +31,12 @@ public enum TechnicalErrorCode {
             "SCL-TEC-003",
             "User service unavailable",
             "The deleted accounts could not be listed from wely-users.",
+            HttpStatus.BAD_GATEWAY),
+
+    MEDIA_UNAVAILABLE(
+            "SCL-TEC-004",
+            "Media service unavailable",
+            "The community picture could not be stored or removed through wely-media.",
             HttpStatus.BAD_GATEWAY);
 
     private final String code;

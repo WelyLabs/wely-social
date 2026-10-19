@@ -130,7 +130,19 @@ public enum BusinessErrorCode {
             "SCL-BUS-019",
             "Members only",
             "Only members of the community can see this; join it first.",
-            HttpStatus.FORBIDDEN);
+            HttpStatus.FORBIDDEN),
+
+    COMMUNITY_PICTURE_INVALID(
+            "SCL-BUS-020",
+            "Invalid picture",
+            "The community picture must be a JPEG, PNG, GIF or BMP image.",
+            HttpStatus.BAD_REQUEST),
+
+    COMMUNITY_PICTURE_TOO_LARGE(
+            "SCL-BUS-021",
+            "Picture too large",
+            "The community picture must be at most 10 MB.",
+            HttpStatus.CONTENT_TOO_LARGE);
 
     private final String code;
     private final String title;

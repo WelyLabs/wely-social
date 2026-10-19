@@ -15,13 +15,21 @@ import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
 
 import java.time.Instant;
+import java.util.Map;
 
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.ERROR)
 public interface CommunityRestMapper {
 
     CommunityDraft toDraft(CommunityRequestDTO request);
 
-    CommunityResponseDTO toResponse(Community community);
+    /** The URL of its picture among {@code pictureUrls}, signed by key; null without one. */
+    default CommunityResponseDTO toResponse(Community community, Map<String, String> pictureUrls) {
+        String key = community.pictureKey();
+        return toResponse(community, key == null ? null : pictureUrls.get(key));
+    }
+
+    @Mapping(target = "pictureUrl", source = "pictureUrl")
+    CommunityResponseDTO toResponse(Community community, String pictureUrl);
 
     CommunityMemberResponseDTO toResponse(CommunityMember member);
 

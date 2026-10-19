@@ -44,7 +44,7 @@ public class Neo4jCommunityRepositoryAdapter implements CommunityRepository {
                    c.interests AS interests, c.visibility AS visibility, c.createdAt AS createdAt,
                    COUNT { (:User)-[:MEMBER_OF]->(c) } AS memberCount, role,
                    [x IN friends[0..%d] | x {.userId, .userName, .hashtag, .profilePicUrl}] AS friendMembers,
-                   size(friends) AS friendMemberCount
+                   size(friends) AS friendMemberCount, c.picture AS pictureKey
             """.formatted(FRIEND_MEMBERS_SHOWN);
 
     private static final String INVITATION = """
@@ -92,6 +92,22 @@ public class Neo4jCommunityRepositoryAdapter implements CommunityRepository {
                         MATCH (c:Community {communityId: $communityId})
                         SET c.name = $name, c.description = $description,
                             c.interests = $interests, c.visibility = $visibility
+                        """ + VIEW)
+                .bindAll(params)
+                .fetchAs(Community.class).mappedBy((types, row) -> toCommunity(row))
+                .one();
+    }
+
+    /** A null key removes the picture. */
+    @Override
+    public Mono<Community> setPicture(String communityId, String viewerId, String pictureKey) {
+        Map<String, Object> params = new HashMap<>();
+        params.put("communityId", communityId);
+        params.put("viewerId", viewerId);
+        params.put("pictureKey", pictureKey);
+        return client.query("""
+                        MATCH (c:Community {communityId: $communityId})
+                        SET c.picture = $pictureKey
                         """ + VIEW)
                 .bindAll(params)
                 .fetchAs(Community.class).mappedBy((types, row) -> toCommunity(row))
@@ -307,17 +323,17 @@ public class Neo4jCommunityRepositoryAdapter implements CommunityRepository {
     }
 
     @Override
-    public Mono<Long> deleteEmptyCommunitiesCreatedBy(String creatorId) {
+    public Flux<String> deleteEmptyCommunitiesCreatedBy(String creatorId) {
         return client.query("""
                         MATCH (c:Community {createdBy: $creatorId})
                         WHERE NOT EXISTS { MATCH (:User)-[:MEMBER_OF]->(c) }
+                        WITH c, c.communityId AS communityId
                         DETACH DELETE c
-                        RETURN count(*) AS deleted
+                        RETURN communityId
                         """)
                 .bind(creatorId).to("creatorId")
-                .fetchAs(Long.class).mappedBy((types, row) -> row.get("deleted").asLong())
-                .one()
-                .defaultIfEmpty(0L);
+                .fetchAs(String.class).mappedBy((types, row) -> row.get("communityId").asString())
+                .all();
     }
 
     private static Map<String, Object> draftParams(CommunityDraft draft) {
@@ -345,7 +361,8 @@ public class Neo4jCommunityRepositoryAdapter implements CommunityRepository {
                         nullableString(friend.get("userName")),
                         nullableInt(friend.get("hashtag")),
                         nullableString(friend.get("profilePicUrl")))),
-                row.get("friendMemberCount").asLong());
+                row.get("friendMemberCount").asLong(),
+                nullableString(row.get("pictureKey")));
     }
 
     static CommunityInvitation toInvitation(Record row) {

@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CommunityTest {
 
     private static Community withRole(CommunityRole role) {
-        return new Community("c", "Club", null, null, CommunityVisibility.PUBLIC, Instant.EPOCH, 1, role, null, 0);
+        return new Community("c", "Club", null, null, CommunityVisibility.PUBLIC, Instant.EPOCH, 1, role, null, 0, null);
     }
 
     @Test
@@ -27,7 +27,7 @@ class CommunityTest {
     void shouldCopyItsLists() {
         List<String> interests = new ArrayList<>(List.of("auto"));
         Community community = new Community("c", "Club", null, interests, CommunityVisibility.PUBLIC, Instant.EPOCH, 1,
-                null, List.of(), 0);
+                null, List.of(), 0, null);
         interests.add("rando");
 
         assertThat(community.interests()).containsExactly("auto");

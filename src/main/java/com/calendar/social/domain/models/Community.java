@@ -9,6 +9,7 @@ import java.util.List;
  * @param role          the viewer's role, null when they are not a member
  * @param friendMembers some of the viewer's friends who are members, at most a handful
  * @param friendMemberCount how many of the viewer's friends are members in all
+ * @param pictureKey    the wely-media key of its picture, null when it has none
  */
 public record Community(
         String communityId,
@@ -20,7 +21,8 @@ public record Community(
         long memberCount,
         CommunityRole role,
         List<UserNodeDTO> friendMembers,
-        long friendMemberCount
+        long friendMemberCount,
+        String pictureKey
 ) {
     public Community {
         interests = interests == null ? List.of() : List.copyOf(interests);

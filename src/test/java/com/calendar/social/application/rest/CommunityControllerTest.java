@@ -12,6 +12,8 @@ import com.calendar.social.domain.services.CommunityService;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
 import com.calendar.social.exception.GlobalErrorHandler;
+import com.calendar.social.exception.TechnicalErrorCode;
+import com.calendar.social.exception.TechnicalException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,9 +21,13 @@ import org.mapstruct.factory.Mappers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.MethodParameter;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.BindingContext;
 import org.springframework.web.reactive.result.method.HandlerMethodArgumentResolver;
 import org.springframework.web.server.ServerWebExchange;
@@ -32,7 +38,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 
+import static org.mockito.AdditionalMatchers.aryEq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -54,6 +64,7 @@ class CommunityControllerTest {
     void setUp() {
         Jwt jwt = mock(Jwt.class);
         lenient().when(jwt.getClaimAsString("businessId")).thenReturn(ME);
+        lenient().when(service.pictureUrls(any())).thenReturn(Mono.just(Map.of()));
         CommunityController controller = new CommunityController(service, Mappers.getMapper(CommunityRestMapper.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         client = WebTestClient.bindToController(controller)
@@ -75,7 +86,7 @@ class CommunityControllerTest {
 
     private static Community community(CommunityRole role) {
         return new Community(ID, "Club", "Voitures", List.of("auto"), CommunityVisibility.PUBLIC, NOW, 3, role,
-                List.of(), 0);
+                List.of(), 0, null);
     }
 
     private static CommunityInvitation invitation(Instant expiresAt) {
@@ -318,5 +329,112 @@ class CommunityControllerTest {
     void publicConstructor_shouldUseTheSystemClock() {
         // The constructor Spring calls: nothing to observe but that it builds.
         new CommunityController(service, Mappers.getMapper(CommunityRestMapper.class));
+    }
+
+    // --- pictures --------------------------------------------------------------------------------
+
+    private static Community withPicture(String pictureKey) {
+        return new Community(ID, "Club", "Voitures", List.of("auto"), CommunityVisibility.PUBLIC, NOW, 3,
+                CommunityRole.ADMIN, List.of(), 0, pictureKey);
+    }
+
+    private static MultiValueMap<String, HttpEntity<?>> picture(byte[] content) {
+        MultipartBodyBuilder parts = new MultipartBodyBuilder();
+        parts.part("file", content, MediaType.IMAGE_JPEG).filename("photo.jpg");
+        return parts.build();
+    }
+
+    @Test
+    void find_shouldSendTheSignedUrlOfItsPicture() {
+        when(service.find(ME, ID)).thenReturn(Mono.just(withPicture("communities/c1/p.jpg")));
+        when(service.pictureUrls(List.of(withPicture("communities/c1/p.jpg"))))
+                .thenReturn(Mono.just(Map.of("communities/c1/p.jpg", "https://media/p")));
+
+        client.get().uri("/communities/" + ID).exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.pictureUrl").isEqualTo("https://media/p")
+                .jsonPath("$.pictureKey").doesNotExist();
+    }
+
+    @Test
+    void mine_shouldSignTheWholeListInOneRound() {
+        Community first = withPicture("communities/c1/p.jpg");
+        Community second = withPicture(null);
+        when(service.mine(ME)).thenReturn(Flux.just(first, second));
+        when(service.pictureUrls(List.of(first, second)))
+                .thenReturn(Mono.just(Map.of("communities/c1/p.jpg", "https://media/p")));
+
+        client.get().uri("/communities/mine").exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$[0].pictureUrl").isEqualTo("https://media/p")
+                .jsonPath("$[1].pictureUrl").doesNotExist();
+        verify(service).pictureUrls(List.of(first, second));
+    }
+
+    @Test
+    void setPicture_shouldPassTheFileOn_andReturnTheCommunity() {
+        byte[] content = {1, 2, 3};
+        when(service.setPicture(eq(ME), eq(ID), any())).thenReturn(Mono.just(withPicture("communities/c1/p.jpg")));
+        when(service.pictureUrls(any())).thenReturn(Mono.just(Map.of("communities/c1/p.jpg", "https://media/p")));
+
+        client.post().uri("/communities/" + ID + "/picture")
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(BodyInserters.fromMultipartData(picture(content)))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody().jsonPath("$.pictureUrl").isEqualTo("https://media/p");
+        verify(service).setPicture(eq(ME), eq(ID), aryEq(content));
+    }
+
+    @Test
+    void setPicture_shouldAnswerBadRequest_whenNoFileIsSent() {
+        MultipartBodyBuilder parts = new MultipartBodyBuilder();
+        parts.part("other", "text");
+
+        client.post().uri("/communities/" + ID + "/picture")
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(BodyInserters.fromMultipartData(parts.build()))
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody().jsonPath("$.code").isEqualTo("SCL-BUS-020");
+    }
+
+    @Test
+    void setPicture_shouldAnswerForbidden_forAMember() {
+        when(service.setPicture(eq(ME), eq(ID), any()))
+                .thenReturn(Mono.error(new BusinessException(BusinessErrorCode.COMMUNITY_ADMIN_REQUIRED)));
+
+        client.post().uri("/communities/" + ID + "/picture")
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(BodyInserters.fromMultipartData(picture(new byte[]{1})))
+                .exchange()
+                .expectStatus().isForbidden()
+                .expectBody().jsonPath("$.code").isEqualTo("SCL-BUS-011");
+    }
+
+    @Test
+    void setPicture_shouldAnswerBadGateway_whenWelyMediaIsDown() {
+        when(service.setPicture(eq(ME), eq(ID), any()))
+                .thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
+
+        client.post().uri("/communities/" + ID + "/picture")
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(BodyInserters.fromMultipartData(picture(new byte[]{1})))
+                .exchange()
+                .expectStatus().isEqualTo(502)
+                .expectBody().jsonPath("$.code").isEqualTo("SCL-TEC-004");
+    }
+
+    @Test
+    void removePicture_shouldReturnTheCommunityWithoutPicture() {
+        when(service.removePicture(ME, ID)).thenReturn(Mono.just(withPicture(null)));
+
+        client.delete().uri("/communities/" + ID + "/picture").exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.communityId").isEqualTo(ID)
+                .jsonPath("$.pictureUrl").doesNotExist();
     }
 }
