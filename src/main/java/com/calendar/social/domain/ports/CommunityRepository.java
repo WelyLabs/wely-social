@@ -20,6 +20,9 @@ public interface CommunityRepository {
     /** Replaces the community's name, description, interests and visibility; empty if it does not exist. */
     Mono<Community> update(String communityId, String viewerId, CommunityDraft draft);
 
+    /** Sets or, with a null key, removes the community's picture; empty if it does not exist. */
+    Mono<Community> setPicture(String communityId, String viewerId, String pictureKey);
+
     /** Deletes the community with its memberships and invitations. Deleting a missing one is not an error. */
     Mono<Void> delete(String communityId);
 
@@ -71,6 +74,6 @@ public interface CommunityRepository {
     /** Deletes every invitation the user sent, in any community; how many there were. */
     Mono<Long> deleteInvitationsSentBy(String inviterId);
 
-    /** Deletes the communities the user created that have no member left; how many there were. */
-    Mono<Long> deleteEmptyCommunitiesCreatedBy(String creatorId);
+    /** Deletes the communities the user created that have no member left; their ids. */
+    Flux<String> deleteEmptyCommunitiesCreatedBy(String creatorId);
 }

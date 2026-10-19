@@ -9,12 +9,16 @@ import com.calendar.social.application.rest.dtos.LeaveCommunityRequestDTO;
 import com.calendar.social.application.rest.dtos.LeaveCommunityResponseDTO;
 import com.calendar.social.application.rest.dtos.RoleRequestDTO;
 import com.calendar.social.application.rest.mappers.CommunityRestMapper;
+import com.calendar.social.domain.models.Community;
 import com.calendar.social.domain.services.CommunityService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.multipart.Part;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.util.MultiValueMap;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +34,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
+import java.util.List;
 
 /**
  * Communities. A private one answers 404 SCL-BUS-010 to a non-member on every path, as an unknown
@@ -62,32 +67,32 @@ public class CommunityController {
     public Flux<CommunityResponseDTO> discover(@AuthenticationPrincipal Jwt jwt,
                                                @RequestParam(required = false) String q,
                                                @RequestParam(required = false) String interest) {
-        return communityService.discover(userId(jwt), q, interest).map(mapper::toResponse);
+        return respond(communityService.discover(userId(jwt), q, interest));
     }
 
     /** The caller's communities, public and private. */
     @GetMapping("mine")
     public Flux<CommunityResponseDTO> mine(@AuthenticationPrincipal Jwt jwt) {
-        return communityService.mine(userId(jwt)).map(mapper::toResponse);
+        return respond(communityService.mine(userId(jwt)));
     }
 
     /** 400 SCL-BUS-012 when the name, description, interests or visibility break the rules. */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Mono<CommunityResponseDTO> create(@AuthenticationPrincipal Jwt jwt, @RequestBody CommunityRequestDTO request) {
-        return communityService.create(userId(jwt), mapper.toDraft(request)).map(mapper::toResponse);
+        return respond(communityService.create(userId(jwt), mapper.toDraft(request)));
     }
 
     @GetMapping("{communityId}")
     public Mono<CommunityResponseDTO> find(@AuthenticationPrincipal Jwt jwt, @PathVariable String communityId) {
-        return communityService.find(userId(jwt), communityId).map(mapper::toResponse);
+        return respond(communityService.find(userId(jwt), communityId));
     }
 
     /** Admins only (403 SCL-BUS-011). */
     @PutMapping("{communityId}")
     public Mono<CommunityResponseDTO> update(@AuthenticationPrincipal Jwt jwt, @PathVariable String communityId,
                                              @RequestBody CommunityRequestDTO request) {
-        return communityService.update(userId(jwt), communityId, mapper.toDraft(request)).map(mapper::toResponse);
+        return respond(communityService.update(userId(jwt), communityId, mapper.toDraft(request)));
     }
 
     @DeleteMapping("{communityId}")
@@ -99,7 +104,7 @@ public class CommunityController {
     /** Public communities only, at once and without approval; joining twice changes nothing. */
     @PostMapping("{communityId}/join")
     public Mono<CommunityResponseDTO> join(@AuthenticationPrincipal Jwt jwt, @PathVariable String communityId) {
-        return communityService.join(userId(jwt), communityId).map(mapper::toResponse);
+        return respond(communityService.join(userId(jwt), communityId));
     }
 
     /**
@@ -111,6 +116,23 @@ public class CommunityController {
                                                  @RequestBody(required = false) LeaveCommunityRequestDTO request) {
         boolean deleteIfLast = request != null && Boolean.TRUE.equals(request.deleteIfLast());
         return communityService.leave(userId(jwt), communityId, deleteIfLast).map(mapper::toResponse);
+    }
+
+    /**
+     * Admins only. Multipart {@code file}, cropped to a 512 px square: 400 SCL-BUS-020 for anything but
+     * an image, 413 SCL-BUS-021 above 10 MB, 502 SCL-TEC-004 when wely-media cannot store it.
+     */
+    @PostMapping(value = "{communityId}/picture", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Mono<CommunityResponseDTO> setPicture(@AuthenticationPrincipal Jwt jwt, @PathVariable String communityId,
+                                                 @RequestBody Mono<MultiValueMap<String, Part>> form) {
+        return respond(Uploads.fileOf(form)
+                .flatMap(content -> communityService.setPicture(userId(jwt), communityId, content)));
+    }
+
+    /** Admins only; the community goes back to its initials. */
+    @DeleteMapping("{communityId}/picture")
+    public Mono<CommunityResponseDTO> removePicture(@AuthenticationPrincipal Jwt jwt, @PathVariable String communityId) {
+        return respond(communityService.removePicture(userId(jwt), communityId));
     }
 
     @GetMapping("{communityId}/members")
@@ -166,7 +188,19 @@ public class CommunityController {
     /** Joins and uses the invitation up; 410 SCL-BUS-014 once the 3 days are over. */
     @PostMapping("invitations/{token}/accept")
     public Mono<CommunityResponseDTO> accept(@AuthenticationPrincipal Jwt jwt, @PathVariable String token) {
-        return communityService.accept(userId(jwt), token).map(mapper::toResponse);
+        return respond(communityService.accept(userId(jwt), token));
+    }
+
+    /** One signing round for the whole list, so a page costs one call to wely-media, not one per community. */
+    private Flux<CommunityResponseDTO> respond(Flux<Community> communities) {
+        return communities.collectList()
+                .flatMapMany(list -> communityService.pictureUrls(list)
+                        .flatMapIterable(urls -> list.stream().map(community -> mapper.toResponse(community, urls)).toList()));
+    }
+
+    private Mono<CommunityResponseDTO> respond(Mono<Community> community) {
+        return community.flatMap(found -> communityService.pictureUrls(List.of(found))
+                .map(urls -> mapper.toResponse(found, urls)));
     }
 
     private static String userId(Jwt jwt) {

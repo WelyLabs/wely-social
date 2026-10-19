@@ -86,7 +86,8 @@ class AccountErasureServiceTest {
         when(markers.markErased(anyString(), any())).thenReturn(Mono.empty());
         when(communityRepository.findJoined(USER)).thenReturn(Flux.empty());
         when(communityRepository.deleteInvitationsSentBy(USER)).thenReturn(Mono.just(0L));
-        when(communityRepository.deleteEmptyCommunitiesCreatedBy(USER)).thenReturn(Mono.just(0L));
+        when(communityRepository.deleteEmptyCommunitiesCreatedBy(USER)).thenReturn(Flux.empty());
+        when(communityService.discardPictures(any())).thenReturn(Mono.empty());
         when(relationshipRepository.delete(USER)).thenReturn(Mono.empty());
         when(relationshipRepository.findFriendSummaries(USER)).thenReturn(Flux.empty());
         when(outbox.append(any())).thenReturn(Mono.empty());
@@ -96,7 +97,7 @@ class AccountErasureServiceTest {
 
     private static Community membership(String communityId, CommunityRole role) {
         return new Community(communityId, communityId, null, List.of(), CommunityVisibility.PUBLIC, NOW, 3, role,
-                List.of(), 0);
+                List.of(), 0, null);
     }
 
     @Test
@@ -276,5 +277,36 @@ class AccountErasureServiceTest {
 
         verify(relationshipRepository, never()).delete(anyString());
         verifyNoInteractions(outbox);
+    }
+
+    @Test
+    @DisplayName("the communities the erasure deleted lose their pictures once the transaction has committed")
+    void erase_shouldDiscardThePicturesOfTheDeletedCommunities_afterTheTransaction() {
+        Community alone = membership("c1", CommunityRole.ADMIN);
+        Community shared = membership("c2", CommunityRole.ADMIN);
+        when(communityRepository.findJoined(USER)).thenReturn(Flux.just(alone, shared));
+        when(communityService.leaveOnErasure(USER, alone)).thenReturn(Mono.just(CommunityLeave.deleted()));
+        when(communityService.leaveOnErasure(USER, shared)).thenReturn(Mono.just(CommunityLeave.handedOverTo("bob")));
+        when(communityRepository.deleteEmptyCommunitiesCreatedBy(USER)).thenReturn(Flux.just("c9"));
+
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
+
+        InOrder order = inOrder(markers, communityService);
+        order.verify(markers).markErased(USER, NOW);
+        order.verify(communityService).discardPictures(List.of("c1", "c9"));
+    }
+
+    @Test
+    void erase_shouldDiscardNothing_whenTheTransactionFails() {
+        TechnicalException failure = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
+        Community alone = membership("c1", CommunityRole.ADMIN);
+        when(communityRepository.findJoined(USER)).thenReturn(Flux.just(alone));
+        when(communityService.leaveOnErasure(USER, alone)).thenReturn(Mono.just(CommunityLeave.deleted()));
+        when(markers.markErased(anyString(), any())).thenReturn(Mono.error(failure));
+
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyErrorSatisfies(error ->
+                assertThat(error).isSameAs(failure));
+
+        verify(communityService, never()).discardPictures(any());
     }
 }

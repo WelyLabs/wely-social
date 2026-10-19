@@ -12,6 +12,7 @@ import java.util.List;
  *
  * @param role null when the caller is not a member
  * @param friendMembers a few of the caller's friends who are members; friendMemberCount says how many in all
+ * @param pictureUrl a signed URL of its picture, valid one hour; null when it has none, or when it could not be signed
  */
 public record CommunityResponseDTO(
         String communityId,
@@ -23,5 +24,6 @@ public record CommunityResponseDTO(
         long memberCount,
         CommunityRole role,
         List<UserNodeDTO> friendMembers,
-        long friendMemberCount
+        long friendMemberCount,
+        String pictureUrl
 ) {}

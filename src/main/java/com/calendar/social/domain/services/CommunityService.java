@@ -5,9 +5,11 @@ import com.calendar.social.domain.models.CommunityDraft;
 import com.calendar.social.domain.models.CommunityInvitation;
 import com.calendar.social.domain.models.CommunityLeave;
 import com.calendar.social.domain.models.CommunityMember;
+import com.calendar.social.domain.models.CommunityPicture;
 import com.calendar.social.domain.models.CommunityRole;
 import com.calendar.social.domain.models.CommunityVisibility;
 import com.calendar.social.domain.ports.CommunityRepository;
+import com.calendar.social.domain.ports.MediaStore;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
@@ -16,8 +18,13 @@ import reactor.core.publisher.Mono;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -25,18 +32,28 @@ import java.util.function.Supplier;
 public class CommunityService {
 
     static final int DISCOVERY_LIMIT = 50;
+    /** wely-media signs at most this many keys per call. */
+    static final int MAX_URLS_PER_CALL = 200;
+    /** Folders purged at once when several communities go together. */
+    static final int PURGE_CONCURRENCY = 4;
+
+    // JDK logger: the domain takes no logging dependency.
+    private static final System.Logger LOG = System.getLogger(CommunityService.class.getName());
 
     private final CommunityRepository communityRepository;
     private final RelationshipRepository relationshipRepository;
+    private final MediaStore mediaStore;
     private final Clock clock;
     private final Supplier<String> tokenGenerator;
     // Demo accounts, reset every night: never counted as remaining admins nor promoted by a hand-over.
     private final Set<String> protectedUserIds;
 
     public CommunityService(CommunityRepository communityRepository, RelationshipRepository relationshipRepository,
-                            Clock clock, Supplier<String> tokenGenerator, Set<String> protectedUserIds) {
+                            MediaStore mediaStore, Clock clock, Supplier<String> tokenGenerator,
+                            Set<String> protectedUserIds) {
         this.communityRepository = communityRepository;
         this.relationshipRepository = relationshipRepository;
+        this.mediaStore = mediaStore;
         this.clock = clock;
         this.tokenGenerator = tokenGenerator;
         this.protectedUserIds = Set.copyOf(protectedUserIds);
@@ -54,7 +71,79 @@ public class CommunityService {
     }
 
     public Mono<Void> delete(String userId, String communityId) {
-        return requireAdmin(communityId, userId).then(Mono.defer(() -> communityRepository.delete(communityId)));
+        return requireAdmin(communityId, userId).then(Mono.defer(() -> deleteWithPicture(communityId)));
+    }
+
+    /**
+     * Admins only. The new picture is stored before the community points at it, and the old one is
+     * discarded after: a failure in between leaves an orphan in the folder, never a broken picture.
+     */
+    public Mono<Community> setPicture(String userId, String communityId, byte[] content) {
+        return admin(communityId, userId).flatMap(community -> {
+            String key = CommunityPicture.newKey(communityId);
+            return mediaStore.store(key, content)
+                    .then(Mono.defer(() -> communityRepository.setPicture(communityId, userId, key)
+                            .switchIfEmpty(notFound())
+                            .onErrorResume(error -> discard(key).then(Mono.error(error)))))
+                    .flatMap(updated -> discard(community.pictureKey()).thenReturn(updated));
+        });
+    }
+
+    /** Admins only; a community without a picture is returned as it is. */
+    public Mono<Community> removePicture(String userId, String communityId) {
+        return admin(communityId, userId).flatMap(community -> community.pictureKey() == null
+                ? Mono.just(community)
+                : communityRepository.setPicture(communityId, userId, null)
+                        .switchIfEmpty(notFound())
+                        .flatMap(updated -> discard(community.pictureKey()).thenReturn(updated)));
+    }
+
+    /**
+     * Signed URLs of these communities' pictures, by key, in calls of at most 200 keys. wely-media
+     * failing costs the pictures, not the response: the clients fall back to the initials.
+     */
+    public Mono<Map<String, String>> pictureUrls(Collection<Community> communities) {
+        List<String> keys = communities.stream().map(Community::pictureKey).filter(Objects::nonNull).distinct().toList();
+        if (keys.isEmpty()) {
+            return Mono.just(Map.of());
+        }
+        return Flux.range(0, (keys.size() + MAX_URLS_PER_CALL - 1) / MAX_URLS_PER_CALL)
+                .map(chunk -> keys.subList(chunk * MAX_URLS_PER_CALL, Math.min(keys.size(), (chunk + 1) * MAX_URLS_PER_CALL)))
+                .concatMap(chunk -> mediaStore.urls(chunk)
+                        .onErrorResume(error -> {
+                            LOG.log(System.Logger.Level.WARNING, "Community pictures sent without URL: {0}", error.toString());
+                            return Mono.just(Map.of());
+                        }))
+                .collect(HashMap<String, String>::new, Map::putAll)
+                .map(Map::copyOf);
+    }
+
+    /**
+     * Best effort: empties the folders of communities already deleted, current and orphaned pictures
+     * alike. A failure is logged and swallowed: the community is gone either way.
+     */
+    public Mono<Void> discardPictures(Collection<String> communityIds) {
+        return Flux.fromIterable(Set.copyOf(communityIds))
+                .flatMap(communityId -> mediaStore.deletePrefix(CommunityPicture.folder(communityId))
+                        .onErrorResume(error -> {
+                            LOG.log(System.Logger.Level.WARNING, "Pictures of deleted community {0} left in the bucket: {1}",
+                                    communityId, error.toString());
+                            return Mono.empty();
+                        }), PURGE_CONCURRENCY)
+                .then();
+    }
+
+    private Mono<Void> deleteWithPicture(String communityId) {
+        return communityRepository.delete(communityId).then(Mono.defer(() -> discardPictures(List.of(communityId))));
+    }
+
+    /** Best effort, like {@link #discardPictures}; a null key is skipped. */
+    private Mono<Void> discard(String key) {
+        return key == null ? Mono.empty() : mediaStore.delete(key)
+                .onErrorResume(error -> {
+                    LOG.log(System.Logger.Level.WARNING, "Community picture {0} left in the bucket: {1}", key, error.toString());
+                    return Mono.empty();
+                });
     }
 
     /** A public community is visible to all, a private one only to its members. */
@@ -89,7 +178,7 @@ public class CommunityService {
             }
             if (community.memberCount() <= 1) {
                 return deleteIfLast
-                        ? communityRepository.delete(communityId).thenReturn(CommunityLeave.deleted())
+                        ? deleteWithPicture(communityId).thenReturn(CommunityLeave.deleted())
                         : Mono.error(new BusinessException(BusinessErrorCode.COMMUNITY_LAST_MEMBER));
             }
             if (!community.isAdmin()) {
@@ -109,11 +198,15 @@ public class CommunityService {
                         .thenReturn(CommunityLeave.handedOverTo(successor)))
                 // Everyone else left meanwhile, or nobody left can take over: the user is alone after all.
                 .switchIfEmpty(Mono.defer(() -> deleteIfLast
-                        ? communityRepository.delete(communityId).thenReturn(CommunityLeave.deleted())
+                        ? deleteWithPicture(communityId).thenReturn(CommunityLeave.deleted())
                         : Mono.error(new BusinessException(BusinessErrorCode.COMMUNITY_LAST_MEMBER))));
     }
 
-    /** Settles a deleted account's community without asking anyone; its membership goes with its node. */
+    /**
+     * Settles a deleted account's community without asking anyone; its membership goes with its node.
+     * Runs inside the erasure's transaction, so a community deleted here keeps its pictures: the caller
+     * discards them once the transaction has committed.
+     */
     public Mono<CommunityLeave> leaveOnErasure(String userId, Community membership) {
         String communityId = membership.communityId();
         if (membership.memberCount() <= 1) {
@@ -237,10 +330,13 @@ public class CommunityService {
     }
 
     private Mono<Void> requireAdmin(String communityId, String userId) {
+        return admin(communityId, userId).then();
+    }
+
+    private Mono<Community> admin(String communityId, String userId) {
         return find(userId, communityId)
                 .filter(Community::isAdmin)
-                .switchIfEmpty(Mono.error(() -> new BusinessException(BusinessErrorCode.COMMUNITY_ADMIN_REQUIRED)))
-                .then();
+                .switchIfEmpty(Mono.error(() -> new BusinessException(BusinessErrorCode.COMMUNITY_ADMIN_REQUIRED)));
     }
 
     private static Mono<CommunityDraft> valid(CommunityDraft draft) {

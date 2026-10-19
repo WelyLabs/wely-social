@@ -4,6 +4,7 @@ import com.calendar.social.domain.ports.CommunityRepository;
 import com.calendar.social.domain.ports.DeletedUserMarkers;
 import com.calendar.social.domain.ports.DeletedUsersSource;
 import com.calendar.social.domain.ports.FriendshipEventOutbox;
+import com.calendar.social.domain.ports.MediaStore;
 import com.calendar.social.domain.ports.RelationshipRepository;
 import com.calendar.social.domain.ports.TransactionRunner;
 import com.calendar.social.domain.services.AccountErasureService;
@@ -42,10 +43,11 @@ public class SocialApplicationConfig {
     public CommunityService communityService(
             CommunityRepository communityRepository,
             RelationshipRepository relationshipRepository,
+            MediaStore mediaStore,
             @Value("${app.account-deletion.protected-user-ids:}") String protectedUserIds) {
         Set<String> protectedIds = protectedUserIds(protectedUserIds);
         log.info("Community hand-overs skip {} protected account(s)", protectedIds.size());
-        return new CommunityService(communityRepository, relationshipRepository, Clock.systemUTC(),
+        return new CommunityService(communityRepository, relationshipRepository, mediaStore, Clock.systemUTC(),
                 SocialApplicationConfig::invitationToken, protectedIds);
     }
 

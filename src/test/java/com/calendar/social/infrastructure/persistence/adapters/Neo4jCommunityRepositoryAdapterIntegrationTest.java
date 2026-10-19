@@ -146,6 +146,29 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
     }
 
     @Test
+    @DisplayName("a picture is set, kept by an update of the other fields, seen by everyone, then removed")
+    void setPicture_shouldSetKeepAndClearThePicture() {
+        Community club = create(ALICE, "Club", CommunityVisibility.PUBLIC);
+        assertThat(club.pictureKey()).isNull();
+
+        Community withPicture = adapter.setPicture(club.communityId(), ALICE, "communities/x/p.jpg").block();
+        assertThat(withPicture.pictureKey()).isEqualTo("communities/x/p.jpg");
+        assertThat(withPicture.role()).isEqualTo(CommunityRole.ADMIN);
+
+        adapter.update(club.communityId(), ALICE,
+                new CommunityDraft("Club 2", null, List.of(), CommunityVisibility.PUBLIC)).block();
+        assertThat(adapter.findById(club.communityId(), BOB).block().pictureKey()).isEqualTo("communities/x/p.jpg");
+        assertThat(adapter.findPublic(BOB, null, null, 10).blockFirst().pictureKey()).isEqualTo("communities/x/p.jpg");
+
+        assertThat(adapter.setPicture(club.communityId(), ALICE, null).block().pictureKey()).isNull();
+    }
+
+    @Test
+    void setPicture_shouldBeEmpty_forAnUnknownCommunity() {
+        StepVerifier.create(adapter.setPicture("missing", ALICE, "communities/missing/p.jpg")).verifyComplete();
+    }
+
+    @Test
     @DisplayName("discovery lists public communities only, most members first, filtered by text and interest")
     void findPublic_shouldFilterAndSort() {
         Community small = create(ALICE, "Petit club auto", CommunityVisibility.PUBLIC, "auto");
@@ -351,7 +374,7 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
         Community someoneElses = create(BOB, "Someone else's", CommunityVisibility.PUBLIC);
         adapter.removeMember(someoneElses.communityId(), BOB).block();
 
-        StepVerifier.create(adapter.deleteEmptyCommunitiesCreatedBy(ALICE)).expectNext(1L).verifyComplete();
+        StepVerifier.create(adapter.deleteEmptyCommunitiesCreatedBy(ALICE)).expectNext(empty.communityId()).verifyComplete();
 
         StepVerifier.create(adapter.findById(empty.communityId(), ALICE)).verifyComplete();
         assertThat(adapter.findById(stillUsed.communityId(), BOB).block()).isNotNull();
@@ -359,9 +382,9 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
     }
 
     @Test
-    void deleteEmptyCommunitiesCreatedBy_shouldReturnZero_whenNoneIsEmpty() {
+    void deleteEmptyCommunitiesCreatedBy_shouldReturnNothing_whenNoneIsEmpty() {
         create(ALICE, "Club", CommunityVisibility.PUBLIC);
 
-        StepVerifier.create(adapter.deleteEmptyCommunitiesCreatedBy(ALICE)).expectNext(0L).verifyComplete();
+        StepVerifier.create(adapter.deleteEmptyCommunitiesCreatedBy(ALICE)).verifyComplete();
     }
 }

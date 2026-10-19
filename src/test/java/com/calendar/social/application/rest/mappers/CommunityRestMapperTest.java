@@ -15,6 +15,7 @@ import org.mapstruct.factory.Mappers;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -39,7 +40,7 @@ class CommunityRestMapperTest {
     void toResponse_shouldCopyACommunity() {
         UserNodeDTO friend = new UserNodeDTO("f", "lea", 1, null);
         var response = mapper.toResponse(new Community("c", "Club", "d", List.of("auto"), CommunityVisibility.PRIVATE, T, 3,
-                CommunityRole.ADMIN, List.of(friend), 1));
+                CommunityRole.ADMIN, List.of(friend), 1, null), Map.of());
 
         assertThat(response.communityId()).isEqualTo("c");
         assertThat(response.role()).isEqualTo(CommunityRole.ADMIN);
@@ -81,8 +82,33 @@ class CommunityRestMapperTest {
 
     @Test
     void toResponse_shouldMapNothingToNull() {
-        assertThat(mapper.toResponse((Community) null)).isNull();
+        assertThat(mapper.toResponse(null, (String) null)).isNull();
         assertThat(mapper.toResponse((CommunityMember) null)).isNull();
         assertThat(mapper.toResponse((CommunityLeave) null)).isNull();
+    }
+
+    @Test
+    void toResponse_shouldGiveTheSignedUrlOfItsPicture() {
+        Community community = new Community("c", "Club", null, List.of(), CommunityVisibility.PUBLIC, T, 1, null,
+                List.of(), 0, "communities/c/p.jpg");
+
+        assertThat(mapper.toResponse(community, Map.of("communities/c/p.jpg", "https://media/p")).pictureUrl())
+                .isEqualTo("https://media/p");
+    }
+
+    @Test
+    void toResponse_shouldGiveNoUrl_whenThePictureCouldNotBeSigned() {
+        Community community = new Community("c", "Club", null, List.of(), CommunityVisibility.PUBLIC, T, 1, null,
+                List.of(), 0, "communities/c/p.jpg");
+
+        assertThat(mapper.toResponse(community, Map.of()).pictureUrl()).isNull();
+    }
+
+    @Test
+    void toResponse_shouldGiveNoUrl_whenThereIsNoPicture() {
+        Community community = new Community("c", "Club", null, List.of(), CommunityVisibility.PUBLIC, T, 1, null,
+                List.of(), 0, null);
+
+        assertThat(mapper.toResponse(community, Map.of()).pictureUrl()).isNull();
     }
 }

@@ -17,6 +17,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -76,7 +77,7 @@ class Neo4jTransactionRunnerIntegrationTest {
     void inTransaction_shouldCommitEveryWrite_whenAllStepsSucceed() {
         StepVerifier.create(runner.inTransaction(markers.markDeleted(ALICE, AT)
                         .then(Mono.defer(() -> relationships.delete(ALICE)))
-                        .then(Mono.defer(() -> communities.deleteEmptyCommunitiesCreatedBy(ALICE)))))
+                        .thenMany(Flux.defer(() -> communities.deleteEmptyCommunitiesCreatedBy(ALICE))).count()))
                 .expectNext(1L)
                 .verifyComplete();
 
@@ -93,7 +94,7 @@ class Neo4jTransactionRunnerIntegrationTest {
 
         StepVerifier.create(runner.inTransaction(markers.markDeleted(ALICE, AT)
                         .then(Mono.defer(() -> relationships.delete(ALICE)))
-                        .then(Mono.defer(() -> communities.deleteEmptyCommunitiesCreatedBy(ALICE)))
+                        .thenMany(Flux.defer(() -> communities.deleteEmptyCommunitiesCreatedBy(ALICE)))
                         .then(Mono.error(failure))))
                 .verifyErrorSatisfies(error -> assertThat(error).isSameAs(failure));
 
