@@ -1,5 +1,6 @@
 package com.calendar.social.domain.services;
 
+import com.calendar.social.domain.ports.RecordingSocialActivity;
 import com.calendar.social.domain.models.Community;
 import com.calendar.social.domain.models.CommunityDraft;
 import com.calendar.social.domain.models.CommunityInvitation;
@@ -68,12 +69,14 @@ class CommunityServiceTest {
     @Mock
     private MediaStore media;
 
+    private final RecordingSocialActivity activity = new RecordingSocialActivity();
+
     private CommunityService service;
 
     @BeforeEach
     void setUp() {
         service = new CommunityService(repository, relationships, media, Clock.fixed(NOW, ZoneOffset.UTC), () -> TOKEN,
-                Set.of(DEMO));
+                Set.of(DEMO), activity);
     }
 
     private static Community community(CommunityVisibility visibility, CommunityRole role, long members) {
@@ -109,6 +112,19 @@ class CommunityServiceTest {
         when(repository.create(ME, draft(), NOW)).thenReturn(Mono.just(created));
 
         StepVerifier.create(service.create(ME, draft())).expectNext(created).expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(activity.facts()).containsExactly(RecordingSocialActivity.COMMUNITY_CREATED);
+    }
+
+    @Test
+    void create_shouldReportNothing_whenTheCommunityCannotBeStored() {
+        TechnicalException failure = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
+        when(repository.create(ME, draft(), NOW)).thenReturn(Mono.error(failure));
+
+        StepVerifier.create(service.create(ME, draft())).expectErrorMatches(error -> error == failure)
+                .verify(Duration.ofSeconds(10));
+
+        assertThat(activity.facts()).isEmpty();
     }
 
     @Test
@@ -119,6 +135,7 @@ class CommunityServiceTest {
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_INVALID))
                 .verify(Duration.ofSeconds(10));
         verify(repository, never()).create(anyString(), any(), any());
+        assertThat(activity.facts()).isEmpty();
     }
 
     @Test

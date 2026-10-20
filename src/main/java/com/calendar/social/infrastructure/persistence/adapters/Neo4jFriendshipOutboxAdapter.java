@@ -51,6 +51,11 @@ public class Neo4jFriendshipOutboxAdapter implements FriendshipEventOutbox {
         return repository.enqueueSnapshotOnce(snapshotName, SNAPSHOT_TYPE);
     }
 
+    /** How many records are not published yet, for the backlog gauge. */
+    public Mono<Long> countPending() {
+        return repository.countPending();
+    }
+
     public Flux<FriendshipOutboxEventEntity> findPending(int limit) {
         return repository.findPending(limit);
     }

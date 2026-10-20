@@ -1,5 +1,6 @@
 package com.calendar.social.domain.services;
 
+import com.calendar.social.domain.ports.RecordingSocialActivity;
 import com.calendar.social.domain.models.UserModifiedEventDTO;
 import com.calendar.social.domain.models.*;
 import com.calendar.social.domain.ports.FriendshipEventOutbox;
@@ -13,7 +14,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
@@ -23,6 +23,7 @@ import reactor.test.StepVerifier;
 import java.util.UUID;
 import java.time.Duration;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -38,7 +39,8 @@ class RelationshipServiceTest {
     @Mock
     private TransactionRunner transactions;
 
-    @InjectMocks
+    private final RecordingSocialActivity activity = new RecordingSocialActivity();
+
     private RelationshipService relationshipService;
 
     private UserNodeDTO userNodeDTO;
@@ -48,6 +50,7 @@ class RelationshipServiceTest {
 
     @BeforeEach
     void setUp() {
+        relationshipService = new RelationshipService(relationshipRepository, outbox, transactions, activity);
         userNodeDTO = new UserNodeDTO(UUID.randomUUID().toString(), "testuser", 1234, "avatar.png");
         userSocialDTO = new UserSocialDTO(UUID.randomUUID().toString(), "testuser", 1234, "avatar.png", "FRIENDS", null);
         userCreatedEventDTO = new UserCreatedEventDTO(UUID.randomUUID().toString(), "testuser", 1234, "avatar.png");
@@ -78,6 +81,7 @@ class RelationshipServiceTest {
 
         verify(relationshipRepository).sendFriendRequest("senderId", "target", 5678, null);
         verify(outbox).append(event(FriendshipEventType.REQUESTED, "senderId", userNodeDTO.userId()));
+        assertThat(activity.facts()).containsExactly(RecordingSocialActivity.FRIEND_REQUEST_SENT);
     }
 
     @Test
@@ -91,6 +95,7 @@ class RelationshipServiceTest {
 
         verify(relationshipRepository, never()).sendFriendRequest(anyString(), anyString(), anyInt(), any());
         verifyNoInteractions(outbox);
+        assertThat(activity.facts()).isEmpty();
     }
 
     @Test
@@ -104,6 +109,7 @@ class RelationshipServiceTest {
                 .verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(outbox);
+        assertThat(activity.facts()).isEmpty();
     }
 
     @Test
@@ -117,6 +123,9 @@ class RelationshipServiceTest {
         StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
                 .expectErrorMatches(e -> e == DATABASE_DOWN)
                 .verify(Duration.ofSeconds(10));
+
+        // Rolled back: not a request sent.
+        assertThat(activity.facts()).isEmpty();
     }
 
     @Test
@@ -130,6 +139,7 @@ class RelationshipServiceTest {
 
         verify(relationshipRepository, never()).sendFriendRequest(anyString(), anyString(), anyInt(), any());
         verifyNoInteractions(outbox);
+        assertThat(activity.facts()).isEmpty();
     }
 
     @Test
@@ -142,6 +152,7 @@ class RelationshipServiceTest {
                 .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).append(event(FriendshipEventType.ACCEPTED, "userId", userNodeDTO.userId()));
+        assertThat(activity.facts()).containsExactly(RecordingSocialActivity.FRIEND_REQUEST_ACCEPTED);
     }
 
     @Test
@@ -154,6 +165,7 @@ class RelationshipServiceTest {
                 .verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(outbox);
+        assertThat(activity.facts()).isEmpty();
     }
 
     @Test
@@ -164,6 +176,8 @@ class RelationshipServiceTest {
         StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
                 .expectErrorMatches(e -> e == DATABASE_DOWN)
                 .verify(Duration.ofSeconds(10));
+
+        assertThat(activity.facts()).isEmpty();
     }
 
     @Test
@@ -184,6 +198,7 @@ class RelationshipServiceTest {
                 .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).append(event(FriendshipEventType.REJECTED, "userId", userNodeDTO.userId()));
+        assertThat(activity.facts()).containsExactly(RecordingSocialActivity.FRIEND_REQUEST_DECLINED);
     }
 
     @Test
@@ -196,6 +211,19 @@ class RelationshipServiceTest {
                 .verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(outbox);
+        assertThat(activity.facts()).isEmpty();
+    }
+
+    @Test
+    void rejectFriendRequest_shouldReportNothing_whenTheRecordCannotBeWritten() {
+        when(relationshipRepository.rejectFriendRequest("userId", "senderId")).thenReturn(Mono.just(userNodeDTO));
+        when(outbox.append(any())).thenReturn(Mono.error(DATABASE_DOWN));
+
+        StepVerifier.create(relationshipService.rejectFriendRequest("userId", "senderId"))
+                .expectErrorMatches(e -> e == DATABASE_DOWN)
+                .verify(Duration.ofSeconds(10));
+
+        assertThat(activity.facts()).isEmpty();
     }
 
     @Test

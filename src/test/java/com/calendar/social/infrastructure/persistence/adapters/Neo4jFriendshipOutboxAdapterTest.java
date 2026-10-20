@@ -82,6 +82,13 @@ class Neo4jFriendshipOutboxAdapterTest {
     }
 
     @Test
+    void countPending_shouldCountTheRecordsNotPublishedYet() {
+        when(repository.countPending()).thenReturn(Mono.just(7L));
+
+        StepVerifier.create(adapter.countPending()).expectNext(7L).expectComplete().verify(Duration.ofSeconds(10));
+    }
+
+    @Test
     void markPublished_shouldMarkTheVersion() {
         when(repository.markPublished(42L)).thenReturn(Mono.just(1L));
 

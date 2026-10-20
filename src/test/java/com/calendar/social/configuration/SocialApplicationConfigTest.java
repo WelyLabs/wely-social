@@ -1,5 +1,6 @@
 package com.calendar.social.configuration;
 
+import com.calendar.social.domain.ports.RecordingSocialActivity;
 import com.calendar.social.domain.ports.CommunityRepository;
 import com.calendar.social.domain.ports.DeletedUserMarkers;
 import com.calendar.social.domain.ports.DeletedUsersSource;
@@ -27,19 +28,19 @@ class SocialApplicationConfigTest {
     @Test
     void relationshipService_shouldBuildTheDomainServiceFromItsPorts() {
         assertThat(config.relationshipService(mock(RelationshipRepository.class), mock(FriendshipEventOutbox.class),
-                mock(TransactionRunner.class))).isNotNull();
+                mock(TransactionRunner.class), new RecordingSocialActivity())).isNotNull();
     }
 
     @Test
     void communityService_shouldBuildTheDomainServiceFromItsPorts() {
         assertThat(config.communityService(mock(CommunityRepository.class), mock(RelationshipRepository.class),
-                mock(MediaStore.class), "89a380b8-f66a-44d0-b9d9-616241080430")).isNotNull();
+                mock(MediaStore.class), new RecordingSocialActivity(), "89a380b8-f66a-44d0-b9d9-616241080430")).isNotNull();
     }
 
     @Test
     void accountErasureService_shouldBuildTheDomainServiceFromItsPorts() {
         CommunityService communityService = config.communityService(mock(CommunityRepository.class),
-                mock(RelationshipRepository.class), mock(MediaStore.class), "");
+                mock(RelationshipRepository.class), mock(MediaStore.class), new RecordingSocialActivity(), "");
 
         assertThat(config.accountErasureService(mock(DeletedUserMarkers.class), mock(CommunityRepository.class),
                 communityService, mock(RelationshipRepository.class), mock(FriendshipEventOutbox.class),

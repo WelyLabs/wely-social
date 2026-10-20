@@ -13,6 +13,7 @@ import com.calendar.social.domain.models.UserResult;
 import com.calendar.social.domain.models.UserTag;
 import com.calendar.social.domain.ports.FriendshipEventOutbox;
 import com.calendar.social.domain.ports.RelationshipRepository;
+import com.calendar.social.domain.ports.SocialActivity;
 import com.calendar.social.domain.ports.TransactionRunner;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
@@ -29,12 +30,14 @@ public class RelationshipService {
     private final RelationshipRepository relationshipRepository;
     private final FriendshipEventOutbox outbox;
     private final TransactionRunner transactions;
+    private final SocialActivity activity;
 
     public RelationshipService(RelationshipRepository relationshipRepository, FriendshipEventOutbox outbox,
-                               TransactionRunner transactions) {
+                               TransactionRunner transactions, SocialActivity activity) {
         this.relationshipRepository = relationshipRepository;
         this.outbox = outbox;
         this.transactions = transactions;
+        this.activity = activity;
     }
 
     /**
@@ -51,7 +54,9 @@ public class RelationshipService {
                                 .sendFriendRequest(userId, target.userName(), target.hashtag(), viaEventId))
                         .flatMap(receiver -> record(FriendshipEvent.betweenNonFriends(
                                         FriendshipEventType.REQUESTED, userId, receiver.userId()))
-                                .thenReturn(receiver))));
+                                .thenReturn(receiver))))
+                // Once committed, and only for a stored request: an empty answer stored nothing.
+                .doOnNext(receiver -> activity.friendRequestSent());
     }
 
     /** The event goes from the acceptor to the original requester, as wely-notifications expects. */
@@ -59,14 +64,16 @@ public class RelationshipService {
         return transactions.inTransaction(Mono.defer(() -> relationshipRepository.acceptFriendRequest(userId, senderId))
                 .flatMap(sender -> record(FriendshipEvent.betweenNonFriends(
                         FriendshipEventType.ACCEPTED, userId, sender.userId()))
-                        .thenReturn(sender)));
+                        .thenReturn(sender)))
+                .doOnNext(sender -> activity.friendRequestAccepted());
     }
 
     public Mono<UserNodeDTO> rejectFriendRequest(String userId, String senderId) {
         return transactions.inTransaction(Mono.defer(() -> relationshipRepository.rejectFriendRequest(userId, senderId))
                 .flatMap(sender -> record(FriendshipEvent.betweenNonFriends(
                         FriendshipEventType.REJECTED, userId, sender.userId()))
-                        .thenReturn(sender)));
+                        .thenReturn(sender)))
+                .doOnNext(sender -> activity.friendRequestDeclined());
     }
 
     public Mono<Void> deleteFriendship(String userId, String friendId) {

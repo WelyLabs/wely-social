@@ -11,6 +11,7 @@ import com.calendar.social.domain.models.CommunityVisibility;
 import com.calendar.social.domain.ports.CommunityRepository;
 import com.calendar.social.domain.ports.MediaStore;
 import com.calendar.social.domain.ports.RelationshipRepository;
+import com.calendar.social.domain.ports.SocialActivity;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
 import reactor.core.publisher.Flux;
@@ -47,20 +48,23 @@ public class CommunityService {
     private final Supplier<String> tokenGenerator;
     // Demo accounts, reset every night: never counted as remaining admins nor promoted by a hand-over.
     private final Set<String> protectedUserIds;
+    private final SocialActivity activity;
 
     public CommunityService(CommunityRepository communityRepository, RelationshipRepository relationshipRepository,
                             MediaStore mediaStore, Clock clock, Supplier<String> tokenGenerator,
-                            Set<String> protectedUserIds) {
+                            Set<String> protectedUserIds, SocialActivity activity) {
         this.communityRepository = communityRepository;
         this.relationshipRepository = relationshipRepository;
         this.mediaStore = mediaStore;
         this.clock = clock;
         this.tokenGenerator = tokenGenerator;
         this.protectedUserIds = Set.copyOf(protectedUserIds);
+        this.activity = activity;
     }
 
     public Mono<Community> create(String userId, CommunityDraft draft) {
-        return valid(draft).flatMap(checked -> communityRepository.create(userId, checked, clock.instant()));
+        return valid(draft).flatMap(checked -> communityRepository.create(userId, checked, clock.instant()))
+                .doOnNext(created -> activity.communityCreated());
     }
 
     public Mono<Community> update(String userId, String communityId, CommunityDraft draft) {

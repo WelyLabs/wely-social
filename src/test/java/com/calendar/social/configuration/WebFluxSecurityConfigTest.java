@@ -189,6 +189,23 @@ class WebFluxSecurityConfigTest {
     }
 
     @Test
+    @DisplayName("Prometheus finds the HTTP latency buckets and the product metrics")
+    void apiHttpSecurity_shouldLetPrometheusScrapeLatencyAndProductMetrics() {
+        // One request, so http.server.requests has a series to show.
+        client.get().uri("/actuator/health/liveness").exchange().expectStatus().isOk();
+
+        String metrics = client.get().uri("/actuator/prometheus")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class).returnResult().getResponseBody();
+
+        assertThat(metrics)
+                .containsPattern("http_server_requests_seconds_bucket\\{[^}]*le=\"0\\.25\"")
+                .contains("wely_social_friend_requests_total{outcome=\"sent\"}")
+                .contains("wely_social_community_creations_total ");
+    }
+
+    @Test
     @DisplayName("only GET is opened on the Prometheus endpoint")
     void apiHttpSecurity_shouldKeepOtherMethodsOnPrometheusClosed() {
         client.post().uri("/actuator/prometheus")

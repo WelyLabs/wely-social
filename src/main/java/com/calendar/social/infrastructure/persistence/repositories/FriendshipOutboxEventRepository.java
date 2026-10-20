@@ -76,6 +76,10 @@ public interface FriendshipOutboxEventRepository extends ReactiveNeo4jRepository
             + "RETURN size(pairs)")
     Mono<Long> enqueueSnapshotOnce(String migration, String type);
 
+    /** How many records wait to be sent; parked ones are not pending. */
+    @Query("MATCH (e:FriendshipOutboxEvent:Unpublished) RETURN count(e)")
+    Mono<Long> countPending();
+
     /** The oldest pending records, in version order. */
     @Query("MATCH (e:FriendshipOutboxEvent:Unpublished) RETURN e ORDER BY e.version LIMIT $limit")
     Flux<FriendshipOutboxEventEntity> findPending(int limit);
