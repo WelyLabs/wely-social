@@ -75,6 +75,6 @@ public class PersistenceErrorAspect {
         }
 
         log.error("Neo4j failure in {}: {}", operation, error.getMessage(), error);
-        return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
+        return new TechnicalException(TechnicalErrorCode.DATABASE_ERROR, error);
     }
 }

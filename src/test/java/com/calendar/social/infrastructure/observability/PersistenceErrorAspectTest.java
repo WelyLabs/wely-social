@@ -50,6 +50,18 @@ class PersistenceErrorAspectTest {
     }
 
     @Test
+    @DisplayName("the TechnicalException out of a Mono carries the driver failure as its cause")
+    void translateFailures_shouldKeepTheMonoFailureAsCause() throws Throwable {
+        RuntimeException driverFailure = new RuntimeException("Bolt closed");
+        when(joinPoint.proceed()).thenReturn(Mono.error(driverFailure));
+
+        StepVerifier.create((Mono<?>) aspect.translateFailures(joinPoint))
+                .verifyErrorSatisfies(error -> assertThat(error)
+                        .isInstanceOf(TechnicalException.class)
+                        .cause().isSameAs(driverFailure));
+    }
+
+    @Test
     @DisplayName("an infrastructure failure inside a Flux becomes TechnicalException")
     void translateFailures_shouldMapFluxInfrastructureError() throws Throwable {
         when(joinPoint.proceed()).thenReturn(Flux.error(new IllegalStateException("pool exhausted")));
@@ -57,6 +69,16 @@ class PersistenceErrorAspectTest {
         StepVerifier.create((Flux<?>) aspect.translateFailures(joinPoint))
                 .expectError(TechnicalException.class)
                 .verify();
+    }
+
+    @Test
+    @DisplayName("the TechnicalException out of a Flux carries the driver failure as its cause")
+    void translateFailures_shouldKeepTheFluxFailureAsCause() throws Throwable {
+        IllegalStateException driverFailure = new IllegalStateException("pool exhausted");
+        when(joinPoint.proceed()).thenReturn(Flux.error(driverFailure));
+
+        StepVerifier.create((Flux<?>) aspect.translateFailures(joinPoint))
+                .verifyErrorSatisfies(error -> assertThat(error.getCause()).isSameAs(driverFailure));
     }
 
     @Test

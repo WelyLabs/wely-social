@@ -1,5 +1,7 @@
 package com.calendar.social.exception;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -12,6 +14,7 @@ import org.springframework.web.server.ServerWebExchange;
 import java.net.URI;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -23,8 +26,13 @@ import java.util.Map;
  * the standard for this and {@link ProblemDetail} ships with Spring, so there is no reason
  * to invent a fourth shape.
  *
- * <p>Two properties are added beyond the standard fields: {@code code}, the stable
- * identifier a client branches on, and {@code timestamp}, to correlate with logs.
+ * <p>Three properties are added beyond the standard fields: {@code code}, the stable
+ * identifier a client branches on, {@code timestamp}, and {@code requestId}, the WebFlux
+ * request id that every log line written here carries too, so a response leads to its logs.
+ *
+ * <p>Technical failures, the ones someone has to act on, are also counted in
+ * {@value #TECHNICAL_ERRORS_METER} tagged by code ({@code wely_errors_technical_total} in
+ * Prometheus).
  */
 @Slf4j
 @RestControllerAdvice
@@ -33,12 +41,32 @@ public class GlobalErrorHandler {
     /** Namespace for the {@code type} URI. Not dereferenced; it identifies, it does not serve. */
     private static final String PROBLEM_TYPE_BASE = "https://welylabs.app/problems/";
 
+    /** Code of a Bean Validation rejection; no enum carries it. */
+    public static final String VALIDATION_ERROR_CODE = "SCL-VAL-001";
+    /** Code of a status the framework decided (unknown path, wrong method, unreadable body). */
+    public static final String REQUEST_REFUSED_CODE = "SCL-REQ-000";
+    /** Code of a failure nothing else recognised. */
+    public static final String UNEXPECTED_ERROR_CODE = "SCL-TEC-000";
+    /** The codes written here rather than taken from an enum, for the convention tests and the OpenAPI document. */
+    public static final List<String> HANDLER_CODES =
+            List.of(VALIDATION_ERROR_CODE, REQUEST_REFUSED_CODE, UNEXPECTED_ERROR_CODE);
+
+    static final String TECHNICAL_ERRORS_METER = "wely.errors.technical";
+    static final String CODE_TAG = "code";
+
+    private final MeterRegistry meterRegistry;
+
+    public GlobalErrorHandler(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ProblemDetail handleBusinessException(BusinessException ex, ServerWebExchange exchange) {
         BusinessErrorCode error = ex.getErrorCode();
 
         // Expected outcome, not an incident: logged at WARN, and without a stack trace.
-        log.warn("Business failure {} on {}", error.getCode(), exchange.getRequest().getPath());
+        log.warn("Business failure {} on {} (request {})", error.getCode(), exchange.getRequest().getPath(),
+                requestId(exchange));
 
         return problem(error.getHttpStatus(), error.getCode(), error.getTitle(), error.getDetail(),
                 exchange);
@@ -50,7 +78,9 @@ public class GlobalErrorHandler {
 
         // A dependency is down: ERROR with the cause, because someone has to act on it.
         // The previous version logged these at WARN, which hid them.
-        log.error("Technical failure {} on {}", error.getCode(), exchange.getRequest().getPath(), ex);
+        log.error("Technical failure {} on {} (request {})", error.getCode(), exchange.getRequest().getPath(),
+                requestId(exchange), ex);
+        countTechnicalFailure(error.getCode());
 
         return problem(error.getHttpStatus(), error.getCode(), error.getTitle(), error.getDetail(),
                 exchange);
@@ -64,7 +94,11 @@ public class GlobalErrorHandler {
         ex.getBindingResult().getFieldErrors()
                 .forEach(error -> fieldErrors.put(error.getField(), error.getDefaultMessage()));
 
-        ProblemDetail problem = problem(HttpStatus.BAD_REQUEST, "SCL-VAL-001",
+        // Expected outcome of a bad request: DEBUG, like the framework-refused statuses below.
+        log.debug("Validation failure {} on {} (request {})", VALIDATION_ERROR_CODE,
+                exchange.getRequest().getPath(), requestId(exchange));
+
+        ProblemDetail problem = problem(HttpStatus.BAD_REQUEST, VALIDATION_ERROR_CODE,
                 "Invalid request", "One or more fields are invalid.", exchange);
         problem.setProperty("errors", fieldErrors);
 
@@ -84,22 +118,24 @@ public class GlobalErrorHandler {
     public ProblemDetail handleResponseStatusException(ResponseStatusException ex,
                                                        ServerWebExchange exchange) {
         HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
-        log.debug("{} on {}", status, exchange.getRequest().getPath());
+        log.debug("{} on {} (request {})", status, exchange.getRequest().getPath(), requestId(exchange));
 
-        return problem(status, "SCL-REQ-000", status.getReasonPhrase(),
+        return problem(status, REQUEST_REFUSED_CODE, status.getReasonPhrase(),
                 "The request could not be served as sent.", exchange);
     }
 
     /**
      * Last resort. The detail is deliberately generic: an exception message can carry a
      * query, a constraint name or a host, and none of that belongs in a response. The real
-     * message goes to the logs, where the timestamp ties the two together.
+     * message goes to the logs, where the request id ties the two together.
      */
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleUnexpectedException(Exception ex, ServerWebExchange exchange) {
-        log.error("Unhandled failure on {}", exchange.getRequest().getPath(), ex);
+        log.error("Unhandled failure {} on {} (request {})", UNEXPECTED_ERROR_CODE,
+                exchange.getRequest().getPath(), requestId(exchange), ex);
+        countTechnicalFailure(UNEXPECTED_ERROR_CODE);
 
-        return problem(HttpStatus.INTERNAL_SERVER_ERROR, "SCL-TEC-000",
+        return problem(HttpStatus.INTERNAL_SERVER_ERROR, UNEXPECTED_ERROR_CODE,
                 "Unexpected error", "The request could not be completed.", exchange);
     }
 
@@ -111,7 +147,21 @@ public class GlobalErrorHandler {
         problem.setInstance(URI.create(exchange.getRequest().getPath().value()));
         problem.setProperty("code", code);
         problem.setProperty("timestamp", Instant.now().toString());
+        problem.setProperty("requestId", requestId(exchange));
 
         return problem;
+    }
+
+    /** The WebFlux request id: the same one that prefixes the framework's own log lines for this request. */
+    private static String requestId(ServerWebExchange exchange) {
+        return exchange.getRequest().getId();
+    }
+
+    private void countTechnicalFailure(String code) {
+        Counter.builder(TECHNICAL_ERRORS_METER)
+                .description("Requests that failed on a dependency or an unexpected error, by error code")
+                .tag(CODE_TAG, code)
+                .register(meterRegistry)
+                .increment();
     }
 }

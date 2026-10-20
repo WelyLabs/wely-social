@@ -10,6 +10,8 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.codec.DecodingException;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import reactor.test.StepVerifier;
 
 import java.io.IOException;
@@ -152,6 +154,37 @@ class MediaApiAdapterTest {
         StepVerifier.create(unreachable.store(KEY, new byte[]{1}))
                 .expectErrorMatches(MediaApiAdapterTest::isUnavailable)
                 .verify();
+    }
+
+    @Test
+    void store_shouldKeepTheConnectionFailureAsCause_whenWelyMediaCannotBeReached() {
+        server.stop(0);
+        MediaApiAdapter unreachable = adapterFor("http://127.0.0.1:" + server.getAddress().getPort());
+
+        StepVerifier.create(unreachable.store(KEY, new byte[]{1}))
+                .verifyErrorSatisfies(error -> assertThat(error.getCause()).isInstanceOf(WebClientRequestException.class));
+    }
+
+    @Test
+    void urls_shouldKeepTheDecodingFailureAsCause_whenTheAnswerIsUnreadable() {
+        status = 200;
+        body = "<html>not json</html>";
+
+        StepVerifier.create(adapter.urls(List.of(KEY)))
+                .verifyErrorSatisfies(error -> assertThat(error)
+                        .matches(MediaApiAdapterTest::isUnavailable)
+                        .cause().isInstanceOf(DecodingException.class));
+    }
+
+    @Test
+    void store_shouldAnswerUnavailableWithoutACause_whenWelyMediaRefuses() {
+        // An HTTP refusal is an answer, not an exception: there is nothing underneath to carry.
+        answers(502, "MED-TEC-001");
+
+        StepVerifier.create(adapter.store(KEY, new byte[]{1}))
+                .verifyErrorSatisfies(error -> assertThat(error)
+                        .matches(MediaApiAdapterTest::isUnavailable)
+                        .hasNoCause());
     }
 
     @Test

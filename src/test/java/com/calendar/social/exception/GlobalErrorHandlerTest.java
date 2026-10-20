@@ -1,19 +1,27 @@
 package com.calendar.social.exception;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 class GlobalErrorHandlerTest {
 
     private WebTestClient client;
+    private SimpleMeterRegistry meterRegistry;
 
     @RestController
     static class TestController {
@@ -47,12 +55,21 @@ class GlobalErrorHandlerTest {
         Mono<Void> notAllowed() {
             return Mono.error(new ResponseStatusException(HttpStatus.METHOD_NOT_ALLOWED));
         }
+
+        @PostMapping("/validated")
+        Mono<Void> validated(@Valid @RequestBody Named body) {
+            return Mono.empty();
+        }
+    }
+
+    record Named(@NotBlank String name) {
     }
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         client = WebTestClient.bindToController(new TestController())
-                .controllerAdvice(new GlobalErrorHandler())
+                .controllerAdvice(new GlobalErrorHandler(meterRegistry))
                 .build();
     }
 
@@ -70,7 +87,16 @@ class GlobalErrorHandlerTest {
                 .jsonPath("$.code").isEqualTo("SCL-BUS-005")
                 .jsonPath("$.type").isEqualTo("https://welylabs.app/problems/scl-bus-005")
                 .jsonPath("$.instance").isEqualTo("/business-error")
-                .jsonPath("$.timestamp").exists();
+                .jsonPath("$.timestamp").exists()
+                .jsonPath("$.requestId").value(GlobalErrorHandlerTest::assertNotBlank);
+    }
+
+    @Test
+    @DisplayName("a business failure is not counted as a technical one")
+    void handleBusinessException_shouldNotCountATechnicalFailure() {
+        client.get().uri("/business-error").exchange().expectStatus().isNotFound();
+
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METER).counters()).isEmpty();
     }
 
     @Test
@@ -93,7 +119,19 @@ class GlobalErrorHandlerTest {
                 .expectStatus().isEqualTo(502)
                 .expectBody()
                 .jsonPath("$.code").isEqualTo("SCL-TEC-001")
-                .jsonPath("$.title").isEqualTo("Graph database unavailable");
+                .jsonPath("$.title").isEqualTo("Graph database unavailable")
+                .jsonPath("$.requestId").value(GlobalErrorHandlerTest::assertNotBlank);
+    }
+
+    @Test
+    @DisplayName("a technical failure is counted under its code")
+    void handleTechnicalException_shouldCountTheFailureByCode() {
+        client.get().uri("/technical-error").exchange().expectStatus().isEqualTo(502);
+        client.get().uri("/technical-error").exchange().expectStatus().isEqualTo(502);
+
+        assertThat(technicalCount("SCL-TEC-001")).isEqualTo(2.0);
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METER)
+                .tag(GlobalErrorHandler.CODE_TAG, GlobalErrorHandler.UNEXPECTED_ERROR_CODE).counter()).isNull();
     }
 
     @Test
@@ -103,7 +141,8 @@ class GlobalErrorHandlerTest {
                 .exchange()
                 .expectStatus().is5xxServerError()
                 .expectBody()
-                .jsonPath("$.code").isEqualTo("SCL-TEC-000")
+                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.UNEXPECTED_ERROR_CODE)
+                .jsonPath("$.requestId").value(GlobalErrorHandlerTest::assertNotBlank)
                 .jsonPath("$.detail").isEqualTo("The request could not be completed.")
                 // The exception message carried a connection string with a password:
                 // none of that may cross the HTTP boundary.
@@ -127,7 +166,10 @@ class GlobalErrorHandlerTest {
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(404)
                 .jsonPath("$.title").isEqualTo("Not Found")
-                .jsonPath("$.code").isEqualTo("SCL-REQ-000");
+                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.REQUEST_REFUSED_CODE)
+                .jsonPath("$.requestId").value(GlobalErrorHandlerTest::assertNotBlank);
+
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METER).counters()).isEmpty();
     }
 
     @Test
@@ -139,7 +181,44 @@ class GlobalErrorHandlerTest {
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(405)
                 .jsonPath("$.title").isEqualTo("Method Not Allowed")
-                .jsonPath("$.code").isEqualTo("SCL-REQ-000");
+                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.REQUEST_REFUSED_CODE);
+    }
+
+    @Test
+    @DisplayName("an unexpected error is counted as a technical failure under SCL-TEC-000")
+    void handleUnexpectedException_shouldCountTheFailure() {
+        client.get().uri("/generic-error").exchange().expectStatus().is5xxServerError();
+
+        assertThat(technicalCount(GlobalErrorHandler.UNEXPECTED_ERROR_CODE)).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("a validation failure lists its fields and carries the request id")
+    void handleValidationException_shouldListTheFieldsAndCarryTheRequestId() {
+        client.post().uri("/validated")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"name\":\"\"}")
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)
+                .expectBody()
+                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.VALIDATION_ERROR_CODE)
+                .jsonPath("$.errors.name").exists()
+                .jsonPath("$.requestId").value(GlobalErrorHandlerTest::assertNotBlank);
+
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METER).counters()).isEmpty();
+    }
+
+    private double technicalCount(String code) {
+        return meterRegistry.get(GlobalErrorHandler.TECHNICAL_ERRORS_METER)
+                .tag(GlobalErrorHandler.CODE_TAG, code)
+                .counter()
+                .count();
+    }
+
+    private static void assertNotBlank(Object value) {
+        assertThat(value).isInstanceOf(String.class);
+        assertThat((String) value).isNotBlank();
     }
 
 }

@@ -120,7 +120,10 @@ public class MediaApiAdapter implements MediaStore {
                 });
     }
 
-    /** Only an upload carries an image the user chose: any other refusal is ours. */
+    /**
+     * Only an upload carries an image the user chose: any other refusal is ours. No cause: the
+     * failure is an HTTP answer, not an exception, and its status and code are logged by the caller.
+     */
     static RuntimeException exceptionFor(String mediaCode, boolean upload) {
         if (upload && INVALID_IMAGE.equals(mediaCode)) {
             return new BusinessException(BusinessErrorCode.COMMUNITY_PICTURE_INVALID);
@@ -137,6 +140,6 @@ public class MediaApiAdapter implements MediaStore {
 
     private static TechnicalException unavailable(String what, Throwable error) {
         log.warn("Could not {} on wely-media: {}", what, error.toString());
-        return new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE);
+        return new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE, error);
     }
 }

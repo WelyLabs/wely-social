@@ -77,6 +77,6 @@ public class UsersApiDeletedUsersAdapter implements DeletedUsersSource {
     // The secret travels in a header, which no exception message carries.
     private static TechnicalException unavailable(Throwable error) {
         log.warn("Could not list deleted accounts from wely-users: {}", error.toString());
-        return new TechnicalException(TechnicalErrorCode.USERS_UNAVAILABLE);
+        return new TechnicalException(TechnicalErrorCode.USERS_UNAVAILABLE, error);
     }
 }

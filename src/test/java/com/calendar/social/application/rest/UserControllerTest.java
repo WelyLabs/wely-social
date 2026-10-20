@@ -1,5 +1,6 @@
 package com.calendar.social.application.rest;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.calendar.social.application.rest.mappers.PersonRestMapper;
 import com.calendar.social.domain.models.Closeness;
 import com.calendar.social.domain.models.FriendRequest;
@@ -49,7 +50,7 @@ class UserControllerTest {
         mockJwt = mock(Jwt.class);
 
         webTestClient = WebTestClient.bindToController(new UserController(relationshipService, Mappers.getMapper(PersonRestMapper.class)))
-                .controllerAdvice(new GlobalErrorHandler())
+                .controllerAdvice(new GlobalErrorHandler(new SimpleMeterRegistry()))
                 .argumentResolvers(configurer -> configurer.addCustomResolver(new HandlerMethodArgumentResolver() {
                     @Override
                     public boolean supportsParameter(MethodParameter parameter) {

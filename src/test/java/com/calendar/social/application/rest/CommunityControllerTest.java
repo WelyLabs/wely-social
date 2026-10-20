@@ -1,5 +1,6 @@
 package com.calendar.social.application.rest;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.calendar.social.application.rest.mappers.CommunityRestMapper;
 import com.calendar.social.domain.models.Community;
 import com.calendar.social.domain.models.CommunityDraft;
@@ -68,7 +69,7 @@ class CommunityControllerTest {
         CommunityController controller = new CommunityController(service, Mappers.getMapper(CommunityRestMapper.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         client = WebTestClient.bindToController(controller)
-                .controllerAdvice(new GlobalErrorHandler())
+                .controllerAdvice(new GlobalErrorHandler(new SimpleMeterRegistry()))
                 .argumentResolvers(configurer -> configurer.addCustomResolver(new HandlerMethodArgumentResolver() {
                     @Override
                     public boolean supportsParameter(MethodParameter parameter) {

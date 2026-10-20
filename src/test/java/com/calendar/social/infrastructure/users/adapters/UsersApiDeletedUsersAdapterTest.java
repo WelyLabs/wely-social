@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mapstruct.factory.Mappers;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import reactor.test.StepVerifier;
@@ -25,6 +26,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -130,6 +132,13 @@ class UsersApiDeletedUsersAdapterTest {
     }
 
     @Test
+    void page_shouldFailWithoutACause_whenNotConfigured() {
+        // Detected here, before any call: there is no underlying failure to carry.
+        StepVerifier.create(adapter("", SECRET).page(null, 500))
+                .verifyErrorSatisfies(error -> assertThat(error.getCause()).isNull());
+    }
+
+    @Test
     void page_shouldFailWithoutCalling_whenTheUrlIsBlank() {
         StepVerifier.create(adapter("", SECRET).page(null, 500))
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
@@ -160,11 +169,30 @@ class UsersApiDeletedUsersAdapterTest {
     }
 
     @Test
+    void page_shouldKeepTheHttpErrorAsCause_whenWelyUsersAnswers5xx() {
+        status = 503;
+
+        StepVerifier.create(adapter().page(null, 500))
+                .verifyErrorSatisfies(error -> assertThat(error.getCause())
+                        .isInstanceOfSatisfying(WebClientResponseException.class,
+                                http -> assertThat(http.getStatusCode().value()).isEqualTo(503)));
+    }
+
+    @Test
     void page_shouldFailWithUsersUnavailable_whenWelyUsersTimesOut() {
         delayMillis = 2_000;
 
         StepVerifier.create(adapter(url, SECRET, SHORT_TIMEOUT).page(null, 500))
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
+                .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    void page_shouldKeepTheTimeoutAsCause_whenWelyUsersTimesOut() {
+        delayMillis = 2_000;
+
+        StepVerifier.create(adapter(url, SECRET, SHORT_TIMEOUT).page(null, 500))
+                .expectErrorSatisfies(error -> assertThat(error.getCause()).isInstanceOf(TimeoutException.class))
                 .verify(Duration.ofSeconds(5));
     }
 
@@ -215,6 +243,16 @@ class UsersApiDeletedUsersAdapterTest {
         StepVerifier.create(adapter().page(null, 500))
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
                 .verify();
+    }
+
+    @Test
+    void page_shouldKeepTheRejectionAsCause_whenThePageIsIncomplete() {
+        body = "{\"next\":null}";
+
+        StepVerifier.create(adapter().page(null, 500))
+                .verifyErrorSatisfies(error -> assertThat(error.getCause())
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("incomplete deleted-users page"));
     }
 
     @Test

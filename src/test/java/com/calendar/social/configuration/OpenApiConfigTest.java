@@ -12,6 +12,13 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.Operation;
+import io.swagger.v3.oas.models.PathItem;
+import io.swagger.v3.oas.models.Paths;
+import io.swagger.v3.oas.models.responses.ApiResponse;
+import io.swagger.v3.oas.models.responses.ApiResponses;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -99,5 +106,58 @@ class OpenApiConfigTest {
         assertThat(body).isNotNull();
         assertThat(new String(body, java.nio.charset.StandardCharsets.UTF_8))
                 .contains("\"/social-service/");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    @DisplayName("the document describes the Problem body, with every error code of the service")
+    void problemResponsesCustomizer_shouldRegisterTheProblemSchema() {
+        client().get().uri("/v3/api-docs")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.components.schemas.Problem.properties.requestId").exists()
+                .jsonPath("$.components.schemas.Problem.properties.errors").exists()
+                .jsonPath("$.components.schemas.Problem.properties.code.description").value(description ->
+                        assertThat((String) description).contains("BUS", "VAL", "REQ", "TEC"))
+                .jsonPath("$.components.schemas.Problem.properties.code.enum").value(codes ->
+                        assertThat((List<Object>) codes).contains("SCL-BUS-001", "SCL-TEC-001", "SCL-VAL-001",
+                                "SCL-REQ-000", "SCL-TEC-000"));
+    }
+
+    @Test
+    @DisplayName("every documented operation answers its errors as application/problem+json")
+    void problemResponsesCustomizer_shouldDeclareProblemResponsesOnOperations() {
+        client().get().uri("/v3/api-docs")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.paths['/social-service/relationships'].get.responses['4XX'].content['application/problem+json'].schema.$ref")
+                .isEqualTo("#/components/schemas/Problem")
+                .jsonPath("$.paths['/social-service/relationships'].get.responses['5XX'].content['application/problem+json'].schema.$ref")
+                .isEqualTo("#/components/schemas/Problem");
+    }
+
+    @Test
+    @DisplayName("a response an operation already declares is left as it is")
+    void problemResponsesCustomizer_shouldKeepDeclaredResponses() {
+        ApiResponse declared = new ApiResponse().description("declared by hand");
+        Operation operation = new Operation().responses(new ApiResponses().addApiResponse("4XX", declared));
+        OpenAPI document = new OpenAPI().paths(new Paths().addPathItem("/x", new PathItem().get(operation)));
+
+        new OpenApiConfig().problemResponsesCustomizer().customise(document);
+
+        assertThat(operation.getResponses().get("4XX")).isSameAs(declared);
+        assertThat(operation.getResponses().get("5XX").getContent()).containsKey("application/problem+json");
+        assertThat(document.getComponents().getSchemas()).containsKey("Problem");
+    }
+
+    @Test
+    @DisplayName("the code enum is built from the enums and the handler, sorted and without duplicates")
+    void errorCodes_shouldListEveryCodeOnce() {
+        assertThat(OpenApiConfig.errorCodes())
+                .doesNotHaveDuplicates()
+                .isSorted()
+                .contains("SCL-BUS-001", "SCL-TEC-001", "SCL-VAL-001", "SCL-REQ-000", "SCL-TEC-000");
     }
 }
