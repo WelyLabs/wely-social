@@ -67,7 +67,7 @@ class FriendshipOutboxRelayTest {
         when(outbox.findPending(100)).thenReturn(Flux.just(first, second));
         when(dispatcher.dispatch(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(relay.drainOnce()).expectNext(2L).verifyComplete();
+        StepVerifier.create(relay.drainOnce()).expectNext(2L).expectComplete().verify(Duration.ofSeconds(10));
 
         InOrder order = inOrder(dispatcher, outbox);
         order.verify(dispatcher).dispatch(first);
@@ -86,7 +86,7 @@ class FriendshipOutboxRelayTest {
         when(dispatcher.dispatch(first)).thenReturn(Mono.empty());
         when(dispatcher.dispatch(second)).thenReturn(Mono.error(new IllegalStateException("broker down")));
 
-        StepVerifier.create(relay.drainOnce()).expectNext(1L).verifyComplete();
+        StepVerifier.create(relay.drainOnce()).expectNext(1L).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).markPublished(1L);
         verify(outbox, never()).markPublished(2L);
@@ -105,7 +105,7 @@ class FriendshipOutboxRelayTest {
                 new RuntimeException("send failed", new RecordTooLargeException("too large"))));
         when(dispatcher.dispatch(next)).thenReturn(Mono.empty());
 
-        StepVerifier.create(relay.drainOnce()).expectNext(1L).verifyComplete();
+        StepVerifier.create(relay.drainOnce()).expectNext(1L).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).park(eq(1L), argThat(error -> error.contains("send failed") && error.contains("too large")));
         verify(outbox, never()).recordFailure(anyLong(), anyString());
@@ -121,7 +121,7 @@ class FriendshipOutboxRelayTest {
         when(dispatcher.dispatch(broken)).thenReturn(Mono.error(
                 new UnpublishableRecordException(1L, new IllegalArgumentException("unmappable"))));
 
-        StepVerifier.create(relay.drainOnce()).expectNext(0L).verifyComplete();
+        StepVerifier.create(relay.drainOnce()).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).park(eq(1L), anyString());
     }
@@ -135,7 +135,7 @@ class FriendshipOutboxRelayTest {
         when(dispatcher.dispatch(stuck)).thenReturn(Mono.error(new IllegalStateException("broker down")));
         when(dispatcher.dispatch(next)).thenReturn(Mono.empty());
 
-        StepVerifier.create(relay.drainOnce()).expectNext(1L).verifyComplete();
+        StepVerifier.create(relay.drainOnce()).expectNext(1L).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).park(eq(1L), argThat(error -> error.contains("broker down")));
         verify(outbox).markPublished(2L);
@@ -150,7 +150,7 @@ class FriendshipOutboxRelayTest {
         when(dispatcher.dispatch(tooLarge)).thenReturn(Mono.error(new RecordTooLargeException("too large")));
         when(outbox.park(anyLong(), anyString())).thenReturn(Mono.error(new IllegalStateException("graph down")));
 
-        StepVerifier.create(relay.drainOnce()).expectNext(0L).verifyComplete();
+        StepVerifier.create(relay.drainOnce()).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(dispatcher, never()).dispatch(next);
     }
@@ -162,7 +162,7 @@ class FriendshipOutboxRelayTest {
         when(outbox.findPending(100)).thenReturn(Flux.just(stuck));
         when(dispatcher.dispatch(stuck)).thenReturn(Mono.error(new IllegalStateException("broker down")));
 
-        StepVerifier.create(relay.drainOnce()).expectNext(0L).verifyComplete();
+        StepVerifier.create(relay.drainOnce()).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).recordFailure(eq(1L), anyString());
         verify(outbox, never()).park(anyLong(), anyString());
@@ -176,7 +176,7 @@ class FriendshipOutboxRelayTest {
         when(dispatcher.dispatch(first)).thenReturn(Mono.empty());
         when(outbox.markPublished(1L)).thenReturn(Mono.error(new IllegalStateException("graph down")));
 
-        StepVerifier.create(relay.drainOnce()).expectNext(0L).verifyComplete();
+        StepVerifier.create(relay.drainOnce()).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).recordFailure(eq(1L), anyString());
     }
@@ -188,14 +188,14 @@ class FriendshipOutboxRelayTest {
         when(dispatcher.dispatch(first)).thenReturn(Mono.error(new IllegalStateException("broker down")));
         when(outbox.recordFailure(anyLong(), anyString())).thenReturn(Mono.error(new IllegalStateException("graph down")));
 
-        StepVerifier.create(relay.drainOnce()).expectNext(0L).verifyComplete();
+        StepVerifier.create(relay.drainOnce()).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void drainOnce_shouldPublishNothing_whenNothingIsPending() {
         when(outbox.findPending(100)).thenReturn(Flux.empty());
 
-        StepVerifier.create(relay.drainOnce()).expectNext(0L).verifyComplete();
+        StepVerifier.create(relay.drainOnce()).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(dispatcher, never()).dispatch(any());
     }
@@ -204,7 +204,7 @@ class FriendshipOutboxRelayTest {
     void drainOnce_shouldFail_whenThePendingRecordsCannotBeRead() {
         when(outbox.findPending(100)).thenReturn(Flux.error(new IllegalStateException("graph down")));
 
-        StepVerifier.create(relay.drainOnce()).verifyError(IllegalStateException.class);
+        StepVerifier.create(relay.drainOnce()).expectError(IllegalStateException.class).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -232,7 +232,7 @@ class FriendshipOutboxRelayTest {
     void nextDrainDelay_shouldBackOff_whenThePendingRecordsCannotBeRead() {
         when(outbox.findPending(100)).thenReturn(Flux.error(new IllegalStateException("graph down")));
 
-        StepVerifier.create(relay.drainOnce()).verifyError(IllegalStateException.class);
+        StepVerifier.create(relay.drainOnce()).expectError(IllegalStateException.class).verify(Duration.ofSeconds(10));
 
         assertThat(relay.nextDrainDelay()).isEqualTo(POLL.multipliedBy(2));
     }
@@ -253,7 +253,7 @@ class FriendshipOutboxRelayTest {
         when(outbox.purgeSettledBefore(any(), eq(500))).thenReturn(Mono.just(3L));
         Instant earliest = Instant.now().minus(RETENTION);
 
-        StepVerifier.create(relay.purgeOnce()).expectNext(3L).verifyComplete();
+        StepVerifier.create(relay.purgeOnce()).expectNext(3L).expectComplete().verify(Duration.ofSeconds(10));
 
         Instant latest = Instant.now().minus(RETENTION);
         verify(outbox).purgeSettledBefore(argThat(cutoff -> !cutoff.isBefore(earliest) && !cutoff.isAfter(latest)),

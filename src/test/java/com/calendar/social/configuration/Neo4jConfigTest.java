@@ -8,6 +8,7 @@ import org.springframework.transaction.ReactiveTransactionManager;
 import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -50,7 +51,7 @@ class Neo4jConfigTest {
 
         TransactionalOperator operator = config.transactionalOperator(manager);
 
-        StepVerifier.create(operator.transactional(Mono.just("work"))).verifyError(IllegalStateException.class);
+        StepVerifier.create(operator.transactional(Mono.just("work"))).expectError(IllegalStateException.class).verify(Duration.ofSeconds(10));
         verify(manager).getReactiveTransaction(any());
     }
 }

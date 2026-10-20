@@ -21,6 +21,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.util.UUID;
+import java.time.Duration;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -73,7 +74,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
                 .expectNext(userNodeDTO)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(relationshipRepository).sendFriendRequest("senderId", "target", 5678, null);
         verify(outbox).append(event(FriendshipEventType.REQUESTED, "senderId", userNodeDTO.userId()));
@@ -86,7 +87,7 @@ class RelationshipServiceTest {
         StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
                 .expectErrorMatches(throwable -> throwable instanceof BusinessException &&
                         ((BusinessException) throwable).getErrorCode() == BusinessErrorCode.USER_DOES_NOT_EXIST)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(relationshipRepository, never()).sendFriendRequest(anyString(), anyString(), anyInt(), any());
         verifyNoInteractions(outbox);
@@ -100,7 +101,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
                 .expectErrorMatches(e -> e == related)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(outbox);
     }
@@ -115,7 +116,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null))
                 .expectErrorMatches(e -> e == DATABASE_DOWN)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -125,7 +126,7 @@ class RelationshipServiceTest {
         // A runner that never runs the work: any write seen now would have happened outside it.
         when(transactions.inTransaction(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null)).verifyComplete();
+        StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", null)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(relationshipRepository, never()).sendFriendRequest(anyString(), anyString(), anyInt(), any());
         verifyNoInteractions(outbox);
@@ -138,7 +139,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
                 .expectNext(userNodeDTO)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).append(event(FriendshipEventType.ACCEPTED, "userId", userNodeDTO.userId()));
     }
@@ -150,7 +151,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
                 .expectErrorMatches(e -> e == nothing)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(outbox);
     }
@@ -162,14 +163,14 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId"))
                 .expectErrorMatches(e -> e == DATABASE_DOWN)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void acceptFriendRequest_shouldWriteOnlyInsideTheTransaction() {
         when(transactions.inTransaction(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId")).verifyComplete();
+        StepVerifier.create(relationshipService.acceptFriendRequest("userId", "senderId")).expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(relationshipRepository, outbox);
     }
@@ -180,7 +181,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.rejectFriendRequest("userId", "senderId"))
                 .expectNext(userNodeDTO)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).append(event(FriendshipEventType.REJECTED, "userId", userNodeDTO.userId()));
     }
@@ -192,7 +193,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.rejectFriendRequest("userId", "senderId"))
                 .expectErrorMatches(e -> e == nothing)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(outbox);
     }
@@ -201,7 +202,7 @@ class RelationshipServiceTest {
     void rejectFriendRequest_shouldWriteOnlyInsideTheTransaction() {
         when(transactions.inTransaction(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(relationshipService.rejectFriendRequest("userId", "senderId")).verifyComplete();
+        StepVerifier.create(relationshipService.rejectFriendRequest("userId", "senderId")).expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(relationshipRepository, outbox);
     }
@@ -212,7 +213,7 @@ class RelationshipServiceTest {
                 .thenReturn(Mono.just(new RelationshipDTO("ACCEPTED", null, null, null, Closeness.CLOSE)));
 
         StepVerifier.create(relationshipService.deleteFriendship("userId", "friendId"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).append(event(FriendshipEventType.REMOVED, "userId", "friendId", Closeness.CLOSE));
     }
@@ -224,7 +225,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.deleteFriendship("userId", "friendId"))
                 .expectErrorMatches(e -> e == nothing)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(outbox);
     }
@@ -237,14 +238,14 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.deleteFriendship("userId", "friendId"))
                 .expectErrorMatches(e -> e == DATABASE_DOWN)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void deleteFriendship_shouldWriteOnlyInsideTheTransaction() {
         when(transactions.inTransaction(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(relationshipService.deleteFriendship("userId", "friendId")).verifyComplete();
+        StepVerifier.create(relationshipService.deleteFriendship("userId", "friendId")).expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(relationshipRepository, outbox);
     }
@@ -254,7 +255,7 @@ class RelationshipServiceTest {
         when(relationshipRepository.save(userCreatedEventDTO)).thenReturn(Mono.empty());
 
         StepVerifier.create(relationshipService.writeUser(userCreatedEventDTO))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -263,7 +264,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.readAllWithSocialStatus("userId", null))
                 .expectNext(userSocialDTO)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -274,7 +275,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.sendFriendRequest("senderId", "target#5678", "event-1"))
                 .expectNext(userNodeDTO)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -282,7 +283,7 @@ class RelationshipServiceTest {
         StepVerifier.create(Mono.defer(() -> relationshipService.sendFriendRequest("senderId", "no-hashtag", "event-1")))
                 .expectErrorMatches(throwable -> throwable instanceof BusinessException &&
                         ((BusinessException) throwable).getErrorCode() == BusinessErrorCode.INVALID_USER_TAG)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -291,7 +292,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.readAllWithSocialStatus("userId", "PENDING_INCOMING"))
                 .expectNext(friendRequest)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -300,7 +301,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.readAllWithSocialStatus("userId", "PENDING_OUTGOING"))
                 .expectNext(friendRequest)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -309,13 +310,13 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.readAllWithSocialStatus("userId", "FRIENDS"))
                 .expectNext(userNodeDTO)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void readAllWithSocialStatus_Default() {
         StepVerifier.create(relationshipService.readAllWithSocialStatus("userId", "UNKNOWN"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     private static BusinessErrorCode codeOf(Throwable error) {
@@ -330,7 +331,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.findFriendship("alice", "bob"))
                 .expectNext(friends)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -339,7 +340,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.findFriendship("alice", "carol"))
                 .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.NOT_FRIENDS)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -349,7 +350,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.listFriendships("alice"))
                 .expectNext(bob)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -361,7 +362,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.requestCloseness("alice", "bob", Closeness.CLOSE))
                 .expectNext(written)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         // A mere proposal changes no closeness yet: nothing to record.
         verifyNoInteractions(outbox);
@@ -373,7 +374,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.requestCloseness("alice", "bob", Closeness.FRIEND))
                 .expectNext(friends)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(relationshipRepository, never()).updateCloseness(anyString(), any(), anyLong());
     }
@@ -385,7 +386,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.requestCloseness("alice", "bob", Closeness.INTIMATE))
                 .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.CLOSENESS_CONFLICT)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(outbox);
     }
@@ -399,7 +400,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.requestCloseness("alice", "bob", Closeness.FRIEND))
                 .expectNext(friends)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).append(event(FriendshipEventType.CLOSENESS_CHANGED, "alice", "bob", Closeness.CLOSE));
     }
@@ -413,7 +414,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.requestCloseness("alice", "bob", Closeness.FRIEND))
                 .expectErrorMatches(e -> e == DATABASE_DOWN)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -422,7 +423,7 @@ class RelationshipServiceTest {
         when(relationshipRepository.findFriendship("alice", "bob")).thenReturn(Mono.just(close));
         when(transactions.inTransaction(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(relationshipService.requestCloseness("alice", "bob", Closeness.FRIEND)).verifyComplete();
+        StepVerifier.create(relationshipService.requestCloseness("alice", "bob", Closeness.FRIEND)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(relationshipRepository, never()).updateCloseness(anyString(), any(), anyLong());
         verifyNoInteractions(outbox);
@@ -434,7 +435,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.requestCloseness("alice", "carol", Closeness.CLOSE))
                 .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.NOT_FRIENDS)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -446,7 +447,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.acceptCloseness("alice", "bob"))
                 .expectNext(agreed)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(outbox).append(event(FriendshipEventType.CLOSENESS_CHANGED, "alice", "bob", Closeness.FRIEND));
     }
@@ -457,7 +458,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.acceptCloseness("alice", "bob"))
                 .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.NO_CLOSENESS_PROPOSAL)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -468,7 +469,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.declineCloseness("alice", "bob"))
                 .expectNext(friends)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         // The closeness stays what it was: nothing to record.
         verifyNoInteractions(outbox);
@@ -480,7 +481,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.declineCloseness("alice", "bob"))
                 .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.NO_CLOSENESS_PROPOSAL)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -488,7 +489,7 @@ class RelationshipServiceTest {
         UserModifiedEventDTO renamed = new UserModifiedEventDTO("id1", "camille_d", 4321, "Cam", "Dupont", null);
         when(relationshipRepository.update(renamed)).thenReturn(Mono.empty());
 
-        StepVerifier.create(relationshipService.updateUser(renamed)).verifyComplete();
+        StepVerifier.create(relationshipService.updateUser(renamed)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(relationshipRepository).update(renamed);
     }
@@ -501,7 +502,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.findPerson("alice", "bob"))
                 .expectNext(bob)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -510,7 +511,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.findPerson("alice", "nobody"))
                 .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.USER_DOES_NOT_EXIST)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -520,7 +521,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.findMutualFriends("alice", "bob"))
                 .expectNext(userNodeDTO)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -529,7 +530,7 @@ class RelationshipServiceTest {
 
         StepVerifier.create(relationshipService.findMutualFriends("alice", "nobody"))
                 .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.USER_DOES_NOT_EXIST)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(relationshipRepository, never()).findMutualFriends(anyString(), anyString(), anyInt());
     }

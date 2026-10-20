@@ -150,8 +150,8 @@ class Neo4jFriendshipOutboxAdapterIntegrationTest {
         befriend(CAROL, "alice", 1111, ALICE);
         relationships.sendFriendRequest(BOB, "carol", 3333, null).block();
 
-        StepVerifier.create(outbox.enqueueSnapshotOnce()).expectNext(2L).verifyComplete();
-        StepVerifier.create(outbox.enqueueSnapshotOnce()).verifyComplete();
+        StepVerifier.create(outbox.enqueueSnapshotOnce()).expectNext(2L).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(outbox.enqueueSnapshotOnce()).expectComplete().verify(Duration.ofSeconds(10));
 
         List<FriendshipOutboxEventEntity> snapshot = all();
         assertThat(snapshot).hasSize(2).allSatisfy(record -> {
@@ -170,7 +170,7 @@ class Neo4jFriendshipOutboxAdapterIntegrationTest {
 
     @Test
     void enqueueSnapshotOnce_shouldOnlyLeaveTheMarker_whenThereIsNoFriendship() {
-        StepVerifier.create(outbox.enqueueSnapshotOnce()).expectNext(0L).verifyComplete();
+        StepVerifier.create(outbox.enqueueSnapshotOnce()).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(all()).isEmpty();
         assertThat(count("MATCH (m:Migration) RETURN count(m) AS c", Map.of())).isEqualTo(1);
@@ -198,8 +198,8 @@ class Neo4jFriendshipOutboxAdapterIntegrationTest {
         outbox.markPublished(versions.getFirst()).block();
 
         StepVerifier.create(outbox.findPending(1)).assertNext(record ->
-                assertThat(record.getVersion()).isEqualTo(versions.get(1))).verifyComplete();
-        StepVerifier.create(outbox.findPending(10)).expectNextCount(2).verifyComplete();
+                assertThat(record.getVersion()).isEqualTo(versions.get(1))).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(outbox.findPending(10)).expectNextCount(2).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -207,11 +207,11 @@ class Neo4jFriendshipOutboxAdapterIntegrationTest {
         outbox.append(FriendshipEvent.betweenNonFriends(FriendshipEventType.REQUESTED, ALICE, BOB)).block();
         long version = all().getFirst().getVersion();
 
-        StepVerifier.create(outbox.markPublished(version)).expectNext(1L).verifyComplete();
-        StepVerifier.create(outbox.markPublished(version)).expectNext(0L).verifyComplete();
+        StepVerifier.create(outbox.markPublished(version)).expectNext(1L).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(outbox.markPublished(version)).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(all().getFirst().getPublishedAt()).isNotNull();
-        StepVerifier.create(outbox.findPending(10)).verifyComplete();
+        StepVerifier.create(outbox.findPending(10)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -225,7 +225,7 @@ class Neo4jFriendshipOutboxAdapterIntegrationTest {
         FriendshipOutboxEventEntity record = all().getFirst();
         assertThat(record.getAttempts()).isEqualTo(2);
         assertThat(record.getLastError()).isEqualTo("still down");
-        StepVerifier.create(outbox.findPending(10)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(outbox.findPending(10)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -236,8 +236,8 @@ class Neo4jFriendshipOutboxAdapterIntegrationTest {
         long version = all().getFirst().getVersion();
         outbox.recordFailure(version, "broker down").block();
 
-        StepVerifier.create(outbox.park(version, "record too large")).expectNext(1L).verifyComplete();
-        StepVerifier.create(outbox.park(version, "again")).expectNext(0L).verifyComplete();
+        StepVerifier.create(outbox.park(version, "record too large")).expectNext(1L).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(outbox.park(version, "again")).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
 
         FriendshipOutboxEventEntity parked = all().getFirst();
         assertThat(parked.getParkedAt()).isNotNull();
@@ -246,7 +246,7 @@ class Neo4jFriendshipOutboxAdapterIntegrationTest {
         assertThat(parked.getLastError()).isEqualTo("record too large");
         assertThat(count("MATCH (e:FriendshipOutboxEvent:Parked) RETURN count(e) AS c", Map.of())).isEqualTo(1);
         StepVerifier.create(outbox.findPending(10)).assertNext(record ->
-                assertThat(record.getToUserId()).isEqualTo(CAROL)).verifyComplete();
+                assertThat(record.getToUserId()).isEqualTo(CAROL)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -260,9 +260,9 @@ class Neo4jFriendshipOutboxAdapterIntegrationTest {
         outbox.park(records.get(1).getVersion(), "record too large").block();
 
         StepVerifier.create(outbox.purgeSettledBefore(Instant.now().minus(Duration.ofDays(1)), 100))
-                .expectNext(0L).verifyComplete();
+                .expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(outbox.purgeSettledBefore(Instant.now().plus(Duration.ofMinutes(1)), 100))
-                .expectNext(2L).verifyComplete();
+                .expectNext(2L).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(all()).singleElement().satisfies(record -> assertThat(record.getFromUserId()).isEqualTo(BOB));
     }

@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -107,7 +108,7 @@ class CommunityServiceTest {
         Community created = community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 1);
         when(repository.create(ME, draft(), NOW)).thenReturn(Mono.just(created));
 
-        StepVerifier.create(service.create(ME, draft())).expectNext(created).verifyComplete();
+        StepVerifier.create(service.create(ME, draft())).expectNext(created).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -116,7 +117,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.create(ME, invalid))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(repository, never()).create(anyString(), any(), any());
     }
 
@@ -124,7 +125,7 @@ class CommunityServiceTest {
     void create_shouldRefuseNoDraftAtAll() {
         StepVerifier.create(service.create(ME, null))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -133,7 +134,7 @@ class CommunityServiceTest {
         Community updated = community(CommunityVisibility.PRIVATE, CommunityRole.ADMIN, 2);
         when(repository.update(ID, ME, draft())).thenReturn(Mono.just(updated));
 
-        StepVerifier.create(service.update(ME, ID, draft())).expectNext(updated).verifyComplete();
+        StepVerifier.create(service.update(ME, ID, draft())).expectNext(updated).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -143,7 +144,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.update(ME, ID, draft()))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -152,7 +153,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.update(ME, ID, draft()))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_ADMIN_REQUIRED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -161,7 +162,7 @@ class CommunityServiceTest {
         when(repository.delete(ID)).thenReturn(Mono.empty());
         when(media.deletePrefix(FOLDER)).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.delete(ME, ID)).verifyComplete();
+        StepVerifier.create(service.delete(ME, ID)).expectComplete().verify(Duration.ofSeconds(10));
         verify(repository).delete(ID);
         verify(media).deletePrefix(FOLDER);
     }
@@ -172,7 +173,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.delete(ME, ID))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_ADMIN_REQUIRED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     // --- find / discover / mine -----------------------------------------------------------------
@@ -182,7 +183,7 @@ class CommunityServiceTest {
         Community open = community(CommunityVisibility.PUBLIC, null, 4);
         given(open);
 
-        StepVerifier.create(service.find(ME, ID)).expectNext(open).verifyComplete();
+        StepVerifier.create(service.find(ME, ID)).expectNext(open).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -191,7 +192,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.find(ME, ID))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -199,7 +200,7 @@ class CommunityServiceTest {
         Community closed = community(CommunityVisibility.PRIVATE, CommunityRole.MEMBER, 4);
         given(closed);
 
-        StepVerifier.create(service.find(ME, ID)).expectNext(closed).verifyComplete();
+        StepVerifier.create(service.find(ME, ID)).expectNext(closed).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -208,7 +209,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.find(ME, ID))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -216,14 +217,14 @@ class CommunityServiceTest {
         Community open = community(CommunityVisibility.PUBLIC, null, 1);
         when(repository.findPublic(ME, "auto", "voitures", CommunityService.DISCOVERY_LIMIT)).thenReturn(Flux.just(open));
 
-        StepVerifier.create(service.discover(ME, "  auto ", " Voitures ")).expectNext(open).verifyComplete();
+        StepVerifier.create(service.discover(ME, "  auto ", " Voitures ")).expectNext(open).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void discover_shouldTreatBlankFiltersAsNone() {
         when(repository.findPublic(ME, null, null, CommunityService.DISCOVERY_LIMIT)).thenReturn(Flux.empty());
 
-        StepVerifier.create(service.discover(ME, " ", null)).verifyComplete();
+        StepVerifier.create(service.discover(ME, " ", null)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -231,7 +232,7 @@ class CommunityServiceTest {
         Community joined = community(CommunityVisibility.PRIVATE, CommunityRole.MEMBER, 2);
         when(repository.findJoined(ME)).thenReturn(Flux.just(joined));
 
-        StepVerifier.create(service.mine(ME)).expectNext(joined).verifyComplete();
+        StepVerifier.create(service.mine(ME)).expectNext(joined).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     // --- join -----------------------------------------------------------------------------------
@@ -244,7 +245,7 @@ class CommunityServiceTest {
                 .thenReturn(Mono.just(joined));
         when(repository.addMember(ID, ME, CommunityRole.MEMBER, NOW)).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.join(ME, ID)).expectNext(joined).verifyComplete();
+        StepVerifier.create(service.join(ME, ID)).expectNext(joined).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -252,7 +253,7 @@ class CommunityServiceTest {
         Community member = community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 4);
         given(member);
 
-        StepVerifier.create(service.join(ME, ID)).expectNext(member).verifyComplete();
+        StepVerifier.create(service.join(ME, ID)).expectNext(member).expectComplete().verify(Duration.ofSeconds(10));
         verify(repository, never()).addMember(anyString(), anyString(), any(), any());
     }
 
@@ -262,7 +263,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.join(ME, ID))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     // --- leave ----------------------------------------------------------------------------------
@@ -271,7 +272,7 @@ class CommunityServiceTest {
     void leave_shouldChangeNothing_forANonMember() {
         given(community(CommunityVisibility.PUBLIC, null, 4));
 
-        StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.left()).verifyComplete();
+        StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.left()).expectComplete().verify(Duration.ofSeconds(10));
         verify(repository, never()).removeMember(anyString(), anyString());
     }
 
@@ -280,7 +281,7 @@ class CommunityServiceTest {
         given(community(CommunityVisibility.PUBLIC, CommunityRole.MEMBER, 4));
         when(repository.removeMember(ID, ME)).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.left()).verifyComplete();
+        StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.left()).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -289,7 +290,7 @@ class CommunityServiceTest {
         when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.just(1L));
         when(repository.removeMember(ID, ME)).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.left()).verifyComplete();
+        StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.left()).expectComplete().verify(Duration.ofSeconds(10));
         verify(repository, never()).setRole(anyString(), anyString(), any());
     }
 
@@ -303,7 +304,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.leave(ME, ID, false))
                 .expectNext(CommunityLeave.handedOverTo("oldest"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -314,7 +315,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.leave(ME, ID, false))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_LAST_MEMBER))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -325,7 +326,7 @@ class CommunityServiceTest {
         when(repository.delete(ID)).thenReturn(Mono.empty());
         when(media.deletePrefix(FOLDER)).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.leave(ME, ID, true)).expectNext(CommunityLeave.deleted()).verifyComplete();
+        StepVerifier.create(service.leave(ME, ID, true)).expectNext(CommunityLeave.deleted()).expectComplete().verify(Duration.ofSeconds(10));
         verify(repository, never()).removeMember(anyString(), anyString());
     }
 
@@ -337,7 +338,7 @@ class CommunityServiceTest {
         when(repository.setRole(ID, "real", CommunityRole.ADMIN)).thenReturn(Mono.just(true));
         when(repository.removeMember(ID, ME)).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.handedOverTo("real")).verifyComplete();
+        StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.handedOverTo("real")).expectComplete().verify(Duration.ofSeconds(10));
         verify(repository, never()).setRole(ID, DEMO, CommunityRole.ADMIN);
     }
 
@@ -351,7 +352,7 @@ class CommunityServiceTest {
         when(repository.setRole(ID, "real", CommunityRole.ADMIN)).thenReturn(Mono.just(true));
         when(repository.removeMember(ID, ME)).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.handedOverTo("real")).verifyComplete();
+        StepVerifier.create(service.leave(ME, ID, false)).expectNext(CommunityLeave.handedOverTo("real")).expectComplete().verify(Duration.ofSeconds(10));
         verify(repository).setRole(ID, "real", CommunityRole.ADMIN);
     }
 
@@ -361,7 +362,7 @@ class CommunityServiceTest {
         TechnicalException failure = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
         when(repository.countAdmins(ID, Set.of(ME, DEMO))).thenReturn(Mono.error(failure));
 
-        StepVerifier.create(service.leave(ME, ID, false)).expectErrorMatches(error -> error == failure).verify();
+        StepVerifier.create(service.leave(ME, ID, false)).expectErrorMatches(error -> error == failure).verify(Duration.ofSeconds(10));
         verify(repository, never()).removeMember(anyString(), anyString());
     }
 
@@ -371,7 +372,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.leave(ME, ID, false))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_LAST_MEMBER))
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(repository, never()).delete(anyString());
     }
 
@@ -381,7 +382,7 @@ class CommunityServiceTest {
         when(repository.delete(ID)).thenReturn(Mono.empty());
         when(media.deletePrefix(FOLDER)).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.leave(ME, ID, true)).expectNext(CommunityLeave.deleted()).verifyComplete();
+        StepVerifier.create(service.leave(ME, ID, true)).expectNext(CommunityLeave.deleted()).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     // --- leaveOnErasure -------------------------------------------------------------------------
@@ -396,7 +397,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.ADMIN, 1)))
                 .expectNext(CommunityLeave.deleted())
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -404,7 +405,7 @@ class CommunityServiceTest {
     void leaveOnErasure_shouldWriteNothing_whenTheUserIsAPlainMember() {
         StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.MEMBER, 4)))
                 .expectNext(CommunityLeave.left())
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         verifyNoInteractions(repository);
     }
 
@@ -414,7 +415,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.ADMIN, 4)))
                 .expectNext(CommunityLeave.left())
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         verify(repository, never()).setRole(anyString(), anyString(), any());
         verify(repository, never()).delete(anyString());
     }
@@ -427,7 +428,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.ADMIN, 4)))
                 .expectNext(CommunityLeave.handedOverTo("oldest"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         // Never asks the erased user to confirm anything, and leaves the membership to the node's deletion.
         verify(repository, never()).removeMember(anyString(), anyString());
         verify(repository, never()).delete(anyString());
@@ -442,7 +443,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.ADMIN, 2)))
                 .expectNext(CommunityLeave.deleted())
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         verify(repository, never()).setRole(anyString(), anyString(), any());
     }
 
@@ -455,7 +456,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.ADMIN, 3)))
                 .expectNext(CommunityLeave.handedOverTo("real"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         verify(repository, never()).setRole(ID, DEMO, CommunityRole.ADMIN);
     }
 
@@ -466,7 +467,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.leaveOnErasure(ME, membership(CommunityRole.ADMIN, 3)))
                 .expectErrorMatches(error -> error == failure)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     // --- members --------------------------------------------------------------------------------
@@ -477,7 +478,7 @@ class CommunityServiceTest {
         CommunityMember member = new CommunityMember("u", "u", 1, null, CommunityRole.ADMIN, NOW);
         when(repository.findMembers(ID)).thenReturn(Flux.just(member));
 
-        StepVerifier.create(service.members(ME, ID)).expectNext(member).verifyComplete();
+        StepVerifier.create(service.members(ME, ID)).expectNext(member).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -486,7 +487,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.members(ME, ID))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.MEMBERS_ONLY))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     // --- changeRole -----------------------------------------------------------------------------
@@ -497,7 +498,7 @@ class CommunityServiceTest {
         when(repository.roleOf(ID, "m")).thenReturn(Mono.just(CommunityRole.MEMBER));
         when(repository.setRole(ID, "m", CommunityRole.ADMIN)).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.changeRole(ME, ID, "m", CommunityRole.ADMIN)).verifyComplete();
+        StepVerifier.create(service.changeRole(ME, ID, "m", CommunityRole.ADMIN)).expectComplete().verify(Duration.ofSeconds(10));
         verify(repository).setRole(ID, "m", CommunityRole.ADMIN);
     }
 
@@ -506,7 +507,7 @@ class CommunityServiceTest {
         given(community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 3));
         when(repository.roleOf(ID, "m")).thenReturn(Mono.just(CommunityRole.ADMIN));
 
-        StepVerifier.create(service.changeRole(ME, ID, "m", CommunityRole.ADMIN)).verifyComplete();
+        StepVerifier.create(service.changeRole(ME, ID, "m", CommunityRole.ADMIN)).expectComplete().verify(Duration.ofSeconds(10));
         verify(repository, never()).setRole(anyString(), anyString(), any());
     }
 
@@ -517,7 +518,7 @@ class CommunityServiceTest {
         when(repository.countAdmins(ID, Set.of())).thenReturn(Mono.just(2L));
         when(repository.setRole(ID, ME, CommunityRole.MEMBER)).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.changeRole(ME, ID, ME, CommunityRole.MEMBER)).verifyComplete();
+        StepVerifier.create(service.changeRole(ME, ID, ME, CommunityRole.MEMBER)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -528,7 +529,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.changeRole(ME, ID, ME, CommunityRole.MEMBER))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.LAST_ADMIN))
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(repository, never()).setRole(anyString(), anyString(), any());
     }
 
@@ -539,7 +540,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.changeRole(ME, ID, "stranger", CommunityRole.ADMIN))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.MEMBER_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     // --- removeMember ---------------------------------------------------------------------------
@@ -549,7 +550,7 @@ class CommunityServiceTest {
         given(community(CommunityVisibility.PUBLIC, CommunityRole.ADMIN, 3));
         when(repository.removeMember(ID, "m")).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.removeMember(ME, ID, "m")).verifyComplete();
+        StepVerifier.create(service.removeMember(ME, ID, "m")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -559,14 +560,14 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.removeMember(ME, ID, "m"))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.MEMBER_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void removeMember_shouldRefuseRemovingOneself_whichIsLeaving() {
         StepVerifier.create(service.removeMember(ME, ID, ME))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.MEMBER_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     // --- invitations ----------------------------------------------------------------------------
@@ -580,7 +581,7 @@ class CommunityServiceTest {
         when(repository.saveInvitation(ID, ME, "friend", TOKEN, NOW, NOW.plus(CommunityInvitation.VALIDITY)))
                 .thenReturn(Mono.just(sent));
 
-        StepVerifier.create(service.invite(ME, ID, "friend")).expectNext(sent).verifyComplete();
+        StepVerifier.create(service.invite(ME, ID, "friend")).expectNext(sent).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -590,7 +591,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.invite(ME, ID, "stranger"))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.INVITEE_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -601,7 +602,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.invite(ME, ID, "friend"))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.INVITEE_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(repository, never()).saveInvitation(anyString(), anyString(), anyString(), anyString(), any(), any());
     }
 
@@ -609,14 +610,14 @@ class CommunityServiceTest {
     void invite_shouldRefuseOneself() {
         StepVerifier.create(service.invite(ME, ID, ME))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.INVITEE_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void invite_shouldRefuseNobody() {
         StepVerifier.create(service.invite(ME, ID, " "))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.INVITEE_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -625,7 +626,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.invite(ME, ID, "friend"))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_ADMIN_REQUIRED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -634,7 +635,7 @@ class CommunityServiceTest {
         CommunityInvitation pending = invitation("friend", NOW.plusSeconds(60));
         when(repository.findInvitations(ID)).thenReturn(Flux.just(pending));
 
-        StepVerifier.create(service.invitations(ME, ID)).expectNext(pending).verifyComplete();
+        StepVerifier.create(service.invitations(ME, ID)).expectNext(pending).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -642,7 +643,7 @@ class CommunityServiceTest {
         given(community(CommunityVisibility.PRIVATE, CommunityRole.ADMIN, 3));
         when(repository.deleteInvitation(ID, TOKEN)).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.revoke(ME, ID, TOKEN)).verifyComplete();
+        StepVerifier.create(service.revoke(ME, ID, TOKEN)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -652,7 +653,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.revoke(ME, ID, TOKEN))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.INVITATION_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -660,7 +661,7 @@ class CommunityServiceTest {
         CommunityInvitation expired = invitation(ME, NOW.minusSeconds(1));
         when(repository.findInvitation(TOKEN)).thenReturn(Mono.just(expired));
 
-        StepVerifier.create(service.invitation(ME, TOKEN)).expectNext(expired).verifyComplete();
+        StepVerifier.create(service.invitation(ME, TOKEN)).expectNext(expired).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -669,7 +670,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.invitation(ME, TOKEN))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.INVITATION_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -678,7 +679,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.invitation(ME, TOKEN))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.INVITATION_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -689,7 +690,7 @@ class CommunityServiceTest {
         Community joined = community(CommunityVisibility.PRIVATE, CommunityRole.MEMBER, 4);
         given(joined);
 
-        StepVerifier.create(service.accept(ME, TOKEN)).expectNext(joined).verifyComplete();
+        StepVerifier.create(service.accept(ME, TOKEN)).expectNext(joined).expectComplete().verify(Duration.ofSeconds(10));
         verify(repository).deleteInvitation(ID, TOKEN);
     }
 
@@ -699,7 +700,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.accept(ME, TOKEN))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.INVITATION_EXPIRED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(repository, never()).addMember(anyString(), anyString(), any(), any());
     }
 
@@ -724,7 +725,7 @@ class CommunityServiceTest {
         when(repository.setPicture(eq(ID), eq(ME), anyString())).thenReturn(Mono.just(updated));
         when(media.delete(OLD_KEY)).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.setPicture(ME, ID, PICTURE)).expectNext(updated).verifyComplete();
+        StepVerifier.create(service.setPicture(ME, ID, PICTURE)).expectNext(updated).expectComplete().verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<String> stored = ArgumentCaptor.forClass(String.class);
         InOrder order = inOrder(media, repository);
@@ -740,7 +741,7 @@ class CommunityServiceTest {
         when(media.store(anyString(), any())).thenReturn(Mono.empty());
         when(repository.setPicture(eq(ID), eq(ME), anyString())).thenReturn(Mono.just(withPicture(CommunityRole.ADMIN, "k")));
 
-        StepVerifier.create(service.setPicture(ME, ID, PICTURE)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(service.setPicture(ME, ID, PICTURE)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
         verify(media, never()).delete(anyString());
     }
 
@@ -750,7 +751,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.setPicture(ME, ID, PICTURE))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_ADMIN_REQUIRED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verifyNoInteractions(media);
         verify(repository, never()).setPicture(anyString(), anyString(), any());
     }
@@ -763,7 +764,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.setPicture(ME, ID, PICTURE))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_PICTURE_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(repository, never()).setPicture(anyString(), anyString(), any());
         verify(media, never()).delete(anyString());
     }
@@ -777,7 +778,7 @@ class CommunityServiceTest {
         when(repository.setPicture(eq(ID), eq(ME), anyString())).thenReturn(Mono.error(failure));
         when(media.delete(anyString())).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.setPicture(ME, ID, PICTURE)).expectErrorMatches(error -> error == failure).verify();
+        StepVerifier.create(service.setPicture(ME, ID, PICTURE)).expectErrorMatches(error -> error == failure).verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<String> discarded = ArgumentCaptor.forClass(String.class);
         verify(media).delete(discarded.capture());
@@ -793,7 +794,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.setPicture(ME, ID, PICTURE))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(media).delete(anyString());
     }
 
@@ -805,7 +806,7 @@ class CommunityServiceTest {
         when(repository.setPicture(eq(ID), eq(ME), anyString())).thenReturn(Mono.just(updated));
         when(media.delete(OLD_KEY)).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
 
-        StepVerifier.create(service.setPicture(ME, ID, PICTURE)).expectNext(updated).verifyComplete();
+        StepVerifier.create(service.setPicture(ME, ID, PICTURE)).expectNext(updated).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -815,7 +816,7 @@ class CommunityServiceTest {
         when(repository.setPicture(ID, ME, null)).thenReturn(Mono.just(cleared));
         when(media.delete(OLD_KEY)).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.removePicture(ME, ID)).expectNext(cleared).verifyComplete();
+        StepVerifier.create(service.removePicture(ME, ID)).expectNext(cleared).expectComplete().verify(Duration.ofSeconds(10));
 
         InOrder order = inOrder(repository, media);
         order.verify(repository).setPicture(ID, ME, null);
@@ -827,7 +828,7 @@ class CommunityServiceTest {
         Community bare = withPicture(CommunityRole.ADMIN, null);
         given(bare);
 
-        StepVerifier.create(service.removePicture(ME, ID)).expectNext(bare).verifyComplete();
+        StepVerifier.create(service.removePicture(ME, ID)).expectNext(bare).expectComplete().verify(Duration.ofSeconds(10));
         verify(repository, never()).setPicture(anyString(), anyString(), any());
         verifyNoInteractions(media);
     }
@@ -838,7 +839,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.removePicture(ME, ID))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_ADMIN_REQUIRED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verifyNoInteractions(media);
     }
 
@@ -849,13 +850,13 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.removePicture(ME, ID))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verifyNoInteractions(media);
     }
 
     @Test
     void pictureUrls_shouldNotCallWelyMedia_whenNoCommunityHasAPicture() {
-        StepVerifier.create(service.pictureUrls(List.of(withPicture(null, null)))).expectNext(Map.of()).verifyComplete();
+        StepVerifier.create(service.pictureUrls(List.of(withPicture(null, null)))).expectNext(Map.of()).expectComplete().verify(Duration.ofSeconds(10));
         verifyNoInteractions(media);
     }
 
@@ -866,7 +867,7 @@ class CommunityServiceTest {
         StepVerifier.create(service.pictureUrls(List.of(withPicture(null, OLD_KEY), withPicture(null, OLD_KEY),
                         withPicture(null, null))))
                 .expectNext(Map.of(OLD_KEY, "https://media/old"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -881,7 +882,7 @@ class CommunityServiceTest {
 
         StepVerifier.create(service.pictureUrls(many))
                 .assertNext(urls -> assertThat(urls).hasSize(CommunityService.MAX_URLS_PER_CALL + 1))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         verify(media, times(2)).urls(any());
     }
 
@@ -890,14 +891,14 @@ class CommunityServiceTest {
     void pictureUrls_shouldAnswerNoUrl_whenSigningFails() {
         when(media.urls(any())).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
 
-        StepVerifier.create(service.pictureUrls(List.of(withPicture(null, OLD_KEY)))).expectNext(Map.of()).verifyComplete();
+        StepVerifier.create(service.pictureUrls(List.of(withPicture(null, OLD_KEY)))).expectNext(Map.of()).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void discardPictures_shouldPurgeEachCommunitysFolderOnce() {
         when(media.deletePrefix(anyString())).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.discardPictures(List.of("c1", "c2", "c1"))).verifyComplete();
+        StepVerifier.create(service.discardPictures(List.of("c1", "c2", "c1"))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(media).deletePrefix("communities/c1/");
         verify(media).deletePrefix("communities/c2/");
@@ -909,7 +910,7 @@ class CommunityServiceTest {
                 .thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
         when(media.deletePrefix("communities/c2/")).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.discardPictures(List.of("c1", "c2"))).verifyComplete();
+        StepVerifier.create(service.discardPictures(List.of("c1", "c2"))).expectComplete().verify(Duration.ofSeconds(10));
         verify(media).deletePrefix("communities/c2/");
     }
 
@@ -919,7 +920,7 @@ class CommunityServiceTest {
         when(repository.delete(ID)).thenReturn(Mono.empty());
         when(media.deletePrefix(FOLDER)).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
 
-        StepVerifier.create(service.delete(ME, ID)).verifyComplete();
+        StepVerifier.create(service.delete(ME, ID)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -930,7 +931,7 @@ class CommunityServiceTest {
         StepVerifier.create(service.leaveOnErasure(ME, new Community(ID, "Club", null, List.of(),
                         CommunityVisibility.PUBLIC, NOW, 1, CommunityRole.ADMIN, List.of(), 0, OLD_KEY)))
                 .expectNext(CommunityLeave.deleted())
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         verifyNoInteractions(media);
     }
 }

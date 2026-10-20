@@ -142,7 +142,21 @@ public enum BusinessErrorCode {
             "SCL-BUS-021",
             "Picture too large",
             "The community picture must be at most 10 MB.",
-            HttpStatus.CONTENT_TOO_LARGE);
+            HttpStatus.CONTENT_TOO_LARGE),
+
+    /** No token, or one that does not validate: answered by the security filter chain. */
+    AUTHENTICATION_REQUIRED(
+            "SCL-REQ-001",
+            "Authentication required",
+            "A valid bearer token is required.",
+            HttpStatus.UNAUTHORIZED),
+
+    /** A valid token that does not grant this request: answered by the security filter chain. */
+    ACCESS_DENIED(
+            "SCL-REQ-002",
+            "Access denied",
+            "The token does not grant access to this resource.",
+            HttpStatus.FORBIDDEN);
 
     private final String code;
     private final String title;

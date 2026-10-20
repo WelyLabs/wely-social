@@ -19,6 +19,7 @@ import reactor.test.StepVerifier;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -67,7 +68,7 @@ class Neo4jDeletedUserMarkersAdapterIntegrationTest {
 
     @Test
     void markDeleted_shouldCreateOneMarker_whenNoneExists() {
-        StepVerifier.create(adapter.markDeleted(USER, FIRST)).verifyComplete();
+        StepVerifier.create(adapter.markDeleted(USER, FIRST)).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(markers()).isEqualTo(1);
         assertThat(marker().getDeletedAt().toInstant()).isEqualTo(FIRST);
@@ -79,7 +80,7 @@ class Neo4jDeletedUserMarkersAdapterIntegrationTest {
     void markDeleted_shouldKeepTheFirstDeletedAt_whenReplayed() {
         adapter.markDeleted(USER, FIRST).block();
 
-        StepVerifier.create(adapter.markDeleted(USER, LATER)).verifyComplete();
+        StepVerifier.create(adapter.markDeleted(USER, LATER)).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(markers()).isEqualTo(1);
         assertThat(marker().getDeletedAt().toInstant()).isEqualTo(FIRST);
@@ -91,7 +92,7 @@ class Neo4jDeletedUserMarkersAdapterIntegrationTest {
         adapter.markDeleted(USER, FIRST).block();
         adapter.markErased(USER, FIRST).block();
 
-        StepVerifier.create(adapter.markErased(USER, LATER)).verifyComplete();
+        StepVerifier.create(adapter.markErased(USER, LATER)).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(marker().getErasedAt().toInstant()).isEqualTo(FIRST);
         assertThat(marker().getDeletedAt().toInstant()).isEqualTo(FIRST);
@@ -99,7 +100,7 @@ class Neo4jDeletedUserMarkersAdapterIntegrationTest {
 
     @Test
     void markErased_shouldDoNothing_whenThereIsNoMarker() {
-        StepVerifier.create(adapter.markErased(USER, FIRST)).verifyComplete();
+        StepVerifier.create(adapter.markErased(USER, FIRST)).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(markers()).isZero();
     }
@@ -115,6 +116,6 @@ class Neo4jDeletedUserMarkersAdapterIntegrationTest {
 
         StepVerifier.create(adapter.erasedAmong(List.of("erased", "in-flight", "unknown")))
                 .expectNext(Set.of("erased"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 }

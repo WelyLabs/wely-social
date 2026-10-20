@@ -45,7 +45,7 @@ class Neo4jSchemaInitializerTest {
 
         StepVerifier.create(initializer(Duration.ofMillis(1)).ensureSchema())
                 .expectNext((long) Neo4jSchemaInitializer.STATEMENTS.size())
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         InOrder order = inOrder(client);
         Neo4jSchemaInitializer.STATEMENTS.forEach(statement -> order.verify(client).query(statement));
@@ -69,7 +69,7 @@ class Neo4jSchemaInitializerTest {
         stub(Neo4jSchemaInitializer.FRIENDSHIP_CLOCK_CONSTRAINT, Mono.error(new IllegalStateException("Neo4j down")));
 
         StepVerifier.create(initializer(Duration.ofMillis(1)).ensureSchema())
-                .verifyError(IllegalStateException.class);
+                .expectError(IllegalStateException.class).verify(Duration.ofSeconds(10));
 
         verify(client, never()).query(Neo4jSchemaInitializer.MIGRATION_CONSTRAINT);
     }

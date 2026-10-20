@@ -27,6 +27,7 @@ import reactor.test.StepVerifier;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -146,7 +147,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(adapter.acceptFriendRequest(ALICE, BOB))
                 .expectError(BusinessException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         assertThat(statusBetween(ALICE, BOB)).isEqualTo("SENT_BY_ME");
     }
@@ -168,7 +169,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(adapter.sendFriendRequest(ALICE, "bob", 2222, null))
                 .expectError(BusinessException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         Long relationships = neo4jClient
                 .query("MATCH (:User {userId: $a})-[r:RELATIONSHIP]-(:User {userId: $b}) RETURN count(r) AS c")
@@ -187,7 +188,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(adapter.sendFriendRequest(BOB, "alice", 1111, null))
                 .expectError(BusinessException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         assertThat(statusBetween(ALICE, BOB)).isEqualTo("SENT_BY_ME");
     }
@@ -197,7 +198,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     void sendFriendRequest_shouldRefuseSelf() {
         StepVerifier.create(adapter.sendFriendRequest(ALICE, "alice", 1111, null))
                 .expectError(BusinessException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -207,7 +208,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         adapter.acceptFriendRequest(BOB, ALICE).block();
         adapter.sendFriendRequest(ALICE, "carol", 3333, null).block();
 
-        StepVerifier.create(adapter.findAllFriends(ALICE)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(adapter.findAllFriends(ALICE)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -216,8 +217,8 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
         adapter.sendFriendRequest(CAROL, "alice", 1111, null).block();
 
-        StepVerifier.create(adapter.findOutgoingRequests(ALICE)).expectNextCount(1).verifyComplete();
-        StepVerifier.create(adapter.findIncomingRequests(ALICE)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(adapter.findOutgoingRequests(ALICE)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.findIncomingRequests(ALICE)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -227,14 +228,14 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(adapter.findOutgoingRequests(ALICE))
                 .assertNext(request -> assertThat(request.viaEventId()).isEqualTo("event-1"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(adapter.findIncomingRequests(BOB))
                 .assertNext(request -> {
                     assertThat(request.userId()).isEqualTo(ALICE);
                     assertThat(request.hashtag()).isEqualTo(1111);
                     assertThat(request.viaEventId()).isEqualTo("event-1");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         assertThat(adapter.findAllWithSocialStatus(BOB).collectList().block())
                 .filteredOn(user -> user.userId().equals(ALICE))
                 .singleElement()
@@ -272,7 +273,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
                     // Read before the DELETE: the closeness the friendship had, for the REMOVED record.
                     assertThat(deleted.closeness()).isEqualTo(Closeness.FRIEND);
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(statusBetween(ALICE, BOB)).isEqualTo("NONE");
     }
@@ -283,7 +284,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
         adapter.acceptFriendRequest(BOB, ALICE).block();
 
-        StepVerifier.create(adapter.deleteFriendship(BOB, ALICE)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(adapter.deleteFriendship(BOB, ALICE)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(statusBetween(ALICE, BOB)).isEqualTo("NONE");
     }
@@ -293,16 +294,16 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     void deleteFriendship_shouldRefuseANonFriend() {
         StepVerifier.create(adapter.deleteFriendship(ALICE, CAROL))
                 .expectError(BusinessException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     @DisplayName("a user tag is recognised only with the right hashtag")
     void existsByUserNameAndHashtag_shouldRequireBothParts() {
         StepVerifier.create(adapter.existsByUserNameAndHashtag("alice", 1111))
-                .expectNext(true).verifyComplete();
+                .expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(adapter.existsByUserNameAndHashtag("alice", 9999))
-                .expectNext(false).verifyComplete();
+                .expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -338,7 +339,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         adapter.delete("nobody").block();
         adapter.delete(ALICE).block();
 
-        StepVerifier.create(adapter.delete(ALICE)).verifyComplete();
+        StepVerifier.create(adapter.delete(ALICE)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     private long usersWithId(String userId) {
@@ -359,7 +360,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         adapter.delete(ALICE).block();
         markers.markDeleted(ALICE, Instant.parse("2026-10-15T14:00:00Z")).block();
 
-        StepVerifier.create(adapter.save(new UserCreatedEventDTO(ALICE, "alice", 1111, null))).verifyComplete();
+        StepVerifier.create(adapter.save(new UserCreatedEventDTO(ALICE, "alice", 1111, null))).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(usersWithId(ALICE)).isZero();
     }
@@ -371,7 +372,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         markers.markDeleted(ALICE, Instant.parse("2026-10-15T14:00:00Z")).block();
 
         StepVerifier.create(adapter.update(new UserModifiedEventDTO(ALICE, "alice2", 1111, "A", "M", null)))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(usersWithId(ALICE)).isZero();
         assertThat(adapter.existsByUserNameAndHashtag("alice2", 1111).block()).isFalse();
@@ -383,7 +384,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         markers.markDeleted(ALICE, Instant.parse("2026-10-15T14:00:00Z")).block();
 
         StepVerifier.create(adapter.update(new UserModifiedEventDTO(ALICE, "alice2", 1111, "A", "M", null)))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(adapter.existsByUserNameAndHashtag("alice", 1111).block()).isTrue();
         assertThat(adapter.existsByUserNameAndHashtag("alice2", 1111).block()).isFalse();
@@ -393,7 +394,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     @DisplayName("without a marker, USER_MODIFIED still heals a node USER_CREATED never made")
     void update_shouldStillHealAMissingNode_whenThereIsNoMarker() {
         StepVerifier.create(adapter.update(new UserModifiedEventDTO("dave-id", "dave", 4444, "D", "V", null)))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(usersWithId("dave-id")).isEqualTo(1);
         assertThat(adapter.existsByUserNameAndHashtag("dave", 4444).block()).isTrue();
@@ -451,7 +452,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
     void findFriendship_shouldIgnorePendingRequests() {
         adapter.sendFriendRequest(ALICE, "bob", 2222, null).block();
 
-        StepVerifier.create(adapter.findFriendship(ALICE, BOB)).verifyComplete();
+        StepVerifier.create(adapter.findFriendship(ALICE, BOB)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -487,7 +488,7 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
         adapter.updateCloseness(ALICE, new Friendship(BOB, Closeness.FRIEND, Closeness.CLOSE, false, 0, null), 0).block();
 
         StepVerifier.create(adapter.updateCloseness(BOB, new Friendship(ALICE, Closeness.INTIMATE, null, false, 0, null), 0))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         assertThat(adapter.findFriendship(ALICE, BOB).block().closeness()).isEqualTo(Closeness.FRIEND);
     }
 
@@ -644,13 +645,13 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
 
     @Test
     void findPerson_shouldBeEmpty_whenTheUserIsUnknown() {
-        StepVerifier.create(adapter.findPerson(ALICE, "nobody")).verifyComplete();
+        StepVerifier.create(adapter.findPerson(ALICE, "nobody")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void existsById_shouldTellKnownFromUnknownUsers() {
-        StepVerifier.create(adapter.existsById(BOB)).expectNext(true).verifyComplete();
-        StepVerifier.create(adapter.existsById("nobody")).expectNext(false).verifyComplete();
+        StepVerifier.create(adapter.existsById(BOB)).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.existsById("nobody")).expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test

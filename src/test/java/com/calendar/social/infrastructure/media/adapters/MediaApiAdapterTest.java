@@ -20,6 +20,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -94,7 +95,7 @@ class MediaApiAdapterTest {
         status = 201;
         body = "{\"key\":\"" + KEY + "\",\"width\":512,\"height\":512,\"contentType\":\"image/jpeg\"}";
 
-        StepVerifier.create(adapter.store(KEY, "JPEGDATA".getBytes(StandardCharsets.ISO_8859_1))).verifyComplete();
+        StepVerifier.create(adapter.store(KEY, "JPEGDATA".getBytes(StandardCharsets.ISO_8859_1))).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(method).isEqualTo("POST");
         assertThat(path).isEqualTo(MediaApiAdapter.MEDIA_PATH);
@@ -112,7 +113,7 @@ class MediaApiAdapterTest {
 
         StepVerifier.create(adapter.store(KEY, new byte[]{1}))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_PICTURE_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -121,7 +122,7 @@ class MediaApiAdapterTest {
 
         StepVerifier.create(adapter.store(KEY, new byte[]{1}))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_PICTURE_TOO_LARGE))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -131,7 +132,7 @@ class MediaApiAdapterTest {
 
             StepVerifier.create(adapter.store(KEY, new byte[]{1}))
                     .expectErrorMatches(MediaApiAdapterTest::isUnavailable)
-                    .verify();
+                    .verify(Duration.ofSeconds(10));
         }
     }
 
@@ -143,7 +144,7 @@ class MediaApiAdapterTest {
 
         StepVerifier.create(adapter.store(KEY, new byte[]{1}))
                 .expectErrorMatches(MediaApiAdapterTest::isUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -153,7 +154,7 @@ class MediaApiAdapterTest {
 
         StepVerifier.create(unreachable.store(KEY, new byte[]{1}))
                 .expectErrorMatches(MediaApiAdapterTest::isUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -162,7 +163,7 @@ class MediaApiAdapterTest {
         MediaApiAdapter unreachable = adapterFor("http://127.0.0.1:" + server.getAddress().getPort());
 
         StepVerifier.create(unreachable.store(KEY, new byte[]{1}))
-                .verifyErrorSatisfies(error -> assertThat(error.getCause()).isInstanceOf(WebClientRequestException.class));
+                .expectErrorSatisfies(error -> assertThat(error.getCause()).isInstanceOf(WebClientRequestException.class)).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -171,9 +172,9 @@ class MediaApiAdapterTest {
         body = "<html>not json</html>";
 
         StepVerifier.create(adapter.urls(List.of(KEY)))
-                .verifyErrorSatisfies(error -> assertThat(error)
+                .expectErrorSatisfies(error -> assertThat(error)
                         .matches(MediaApiAdapterTest::isUnavailable)
-                        .cause().isInstanceOf(DecodingException.class));
+                        .cause().isInstanceOf(DecodingException.class)).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -182,16 +183,16 @@ class MediaApiAdapterTest {
         answers(502, "MED-TEC-001");
 
         StepVerifier.create(adapter.store(KEY, new byte[]{1}))
-                .verifyErrorSatisfies(error -> assertThat(error)
+                .expectErrorSatisfies(error -> assertThat(error)
                         .matches(MediaApiAdapterTest::isUnavailable)
-                        .hasNoCause());
+                        .hasNoCause()).verify(Duration.ofSeconds(10));
     }
 
     @Test
     void delete_shouldNameTheKeyInTheQuery() {
         status = 204;
 
-        StepVerifier.create(adapter.delete(KEY)).verifyComplete();
+        StepVerifier.create(adapter.delete(KEY)).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(method).isEqualTo("DELETE");
         assertThat(path).isEqualTo(MediaApiAdapter.MEDIA_PATH);
@@ -203,14 +204,14 @@ class MediaApiAdapterTest {
     void delete_shouldAnswerUnavailable_evenWhenWelyMediaBlamesTheImage() {
         answers(400, "MED-BUS-001");
 
-        StepVerifier.create(adapter.delete(KEY)).expectErrorMatches(MediaApiAdapterTest::isUnavailable).verify();
+        StepVerifier.create(adapter.delete(KEY)).expectErrorMatches(MediaApiAdapterTest::isUnavailable).verify(Duration.ofSeconds(10));
     }
 
     @Test
     void deletePrefix_shouldNameThePrefixInTheQuery() {
         status = 204;
 
-        StepVerifier.create(adapter.deletePrefix("communities/c1/")).verifyComplete();
+        StepVerifier.create(adapter.deletePrefix("communities/c1/")).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(method).isEqualTo("DELETE");
         assertThat(path).isEqualTo(MediaApiAdapter.PREFIX_PATH);
@@ -222,7 +223,7 @@ class MediaApiAdapterTest {
     void deletePrefix_shouldAnswerUnavailable_whenWelyMediaFails() {
         answers(502, "MED-TEC-001");
 
-        StepVerifier.create(adapter.deletePrefix("communities/c1/")).expectErrorMatches(MediaApiAdapterTest::isUnavailable).verify();
+        StepVerifier.create(adapter.deletePrefix("communities/c1/")).expectErrorMatches(MediaApiAdapterTest::isUnavailable).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -230,7 +231,7 @@ class MediaApiAdapterTest {
         server.stop(0);
         MediaApiAdapter unreachable = adapterFor("http://127.0.0.1:" + server.getAddress().getPort());
 
-        StepVerifier.create(unreachable.deletePrefix("communities/c1/")).expectErrorMatches(MediaApiAdapterTest::isUnavailable).verify();
+        StepVerifier.create(unreachable.deletePrefix("communities/c1/")).expectErrorMatches(MediaApiAdapterTest::isUnavailable).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -239,7 +240,7 @@ class MediaApiAdapterTest {
 
         StepVerifier.create(adapter.urls(List.of(KEY, "communities/c2/picture-b.jpg")))
                 .expectNext(Map.of(KEY, "https://media/a"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(method).isEqualTo("POST");
         assertThat(path).isEqualTo(MediaApiAdapter.URLS_PATH);
@@ -252,14 +253,14 @@ class MediaApiAdapterTest {
     void urls_shouldBeEmpty_whenTheAnswerHasNoUrls() {
         body = "{}";
 
-        StepVerifier.create(adapter.urls(List.of(KEY))).expectNext(Map.of()).verifyComplete();
+        StepVerifier.create(adapter.urls(List.of(KEY))).expectNext(Map.of()).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void urls_shouldAnswerUnavailable_whenWelyMediaRefuses() {
         answers(401, "MED-REQ-001");
 
-        StepVerifier.create(adapter.urls(List.of(KEY))).expectErrorMatches(MediaApiAdapterTest::isUnavailable).verify();
+        StepVerifier.create(adapter.urls(List.of(KEY))).expectErrorMatches(MediaApiAdapterTest::isUnavailable).verify(Duration.ofSeconds(10));
     }
 
     @Test

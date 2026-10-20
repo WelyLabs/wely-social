@@ -9,6 +9,7 @@ import reactor.test.StepVerifier;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicReference;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -45,7 +46,7 @@ class MediaApiClientConfigTest {
         StepVerifier.create(config.mediaWebClient(url, "social-secret").delete().uri("/internal/media")
                         .retrieve().toBodilessEntity())
                 .expectNextCount(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(requestedPath).hasValue("/internal/media");
         assertThat(secretHeader).hasValue("social-secret");

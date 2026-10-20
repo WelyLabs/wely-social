@@ -11,7 +11,10 @@ import reactor.test.StepVerifier;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.Executors;
@@ -31,6 +34,7 @@ class UsersApiClientConfigTest {
     private final AtomicReference<String> requestedPath = new AtomicReference<>();
     private final AtomicReference<String> secretHeader = new AtomicReference<>();
     private volatile long delayMillis = 0;
+    private volatile int status = 200;
 
     private HttpServer server;
     private String url;
@@ -48,7 +52,7 @@ class UsersApiClientConfigTest {
                 Thread.currentThread().interrupt();
             }
             byte[] bytes = BODY.getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.sendResponseHeaders(status, bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
                 out.write(bytes);
             }
@@ -68,7 +72,7 @@ class UsersApiClientConfigTest {
 
     @Test
     void usersWebClient_shouldSendTheReaderSecretToTheConfiguredUrl() {
-        StepVerifier.create(get(config.usersWebClient(url, SECRET))).expectNext(BODY).verifyComplete();
+        StepVerifier.create(get(config.usersWebClient(url, SECRET))).expectNext(BODY).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(requestedPath).hasValue(PATH);
         assertThat(secretHeader).hasValue(SECRET);
@@ -76,7 +80,7 @@ class UsersApiClientConfigTest {
 
     @Test
     void usersWebClient_shouldSendAnEmptySecret_whenTheSecretIsBlank() {
-        StepVerifier.create(get(config.usersWebClient(url, ""))).expectNext(BODY).verifyComplete();
+        StepVerifier.create(get(config.usersWebClient(url, ""))).expectNext(BODY).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(secretHeader).hasValue("");
     }
@@ -85,6 +89,35 @@ class UsersApiClientConfigTest {
     void usersWebClient_shouldNotFailTheStartup_whenTheUrlAndTheSecretAreBlank() {
         // The service must start before the secret is sealed: the adapter then refuses every page itself.
         assertThatCode(() -> config.usersWebClient("", "")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void webClient_shouldKeepTheSecretOutOfItsFailures_whenWelyUsersIsUnreachable() throws IOException {
+        // Regression guard: the secret travels in a header, and neither the connection error nor its
+        // "Request to GET ..." checkpoint names headers. A secret in the URL would leak: logback-spring.xml masks that.
+        int closedPort;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            closedPort = socket.getLocalPort();
+        }
+
+        StepVerifier.create(get(UsersApiClientConfig.webClient("http://127.0.0.1:" + closedPort, SECRET, SHORT_TIMEOUT)))
+                .expectErrorSatisfies(error -> assertThat(traceOf(error)).contains("Request to GET").doesNotContain(SECRET))
+                .verify(Duration.ofSeconds(10));
+    }
+
+    @Test
+    void webClient_shouldKeepTheSecretOutOfItsFailures_whenWelyUsersRefusesIt() {
+        status = 401;
+
+        StepVerifier.create(get(UsersApiClientConfig.webClient(url, SECRET, SHORT_TIMEOUT)))
+                .expectErrorSatisfies(error -> assertThat(traceOf(error)).contains("401").doesNotContain(SECRET))
+                .verify(Duration.ofSeconds(10));
+    }
+
+    private static String traceOf(Throwable error) {
+        StringWriter trace = new StringWriter();
+        error.printStackTrace(new PrintWriter(trace));
+        return trace.toString();
     }
 
     @Test

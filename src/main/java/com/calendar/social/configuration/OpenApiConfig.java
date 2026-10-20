@@ -44,7 +44,8 @@ public class OpenApiConfig {
     private static final String CODE_DESCRIPTION = """
             Stable identifier a client branches on. Families: BUS, a business rule refused the \
             request (change the request); VAL, invalid fields, listed in errors; REQ, the request was \
-            refused by the framework (unknown path, wrong method, unreadable body); TEC, a dependency \
+            refused by the framework (unknown path, wrong method, unreadable body) or by security (no valid \
+            token, access denied); TEC, a dependency \
             failed (retry later; someone is looking at an incident).""";
 
     @Bean
@@ -98,7 +99,7 @@ public class OpenApiConfig {
                 .addProperty("code", code)
                 .addProperty("timestamp", new DateTimeSchema()
                         .description("When the error was answered, ISO-8601."))
-                .addProperty("requestId", new StringSchema()
+                .addProperty(GlobalErrorHandler.REQUEST_ID_PROPERTY, new StringSchema()
                         .description("The request id, also in every log line about this failure."))
                 .addProperty("errors", new MapSchema()
                         .additionalProperties(new StringSchema())

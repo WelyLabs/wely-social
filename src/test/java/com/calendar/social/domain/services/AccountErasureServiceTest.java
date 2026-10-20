@@ -34,6 +34,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -106,7 +107,7 @@ class AccountErasureServiceTest {
         when(communityRepository.findJoined(USER)).thenReturn(Flux.just(club));
         when(communityService.leaveOnErasure(USER, club)).thenReturn(Mono.just(CommunityLeave.handedOverTo("bob")));
 
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectComplete().verify(Duration.ofSeconds(10));
 
         InOrder order = inOrder(markers, communityRepository, communityService, relationshipRepository);
         order.verify(markers).markDeleted(USER, DELETED_AT);
@@ -124,7 +125,7 @@ class AccountErasureServiceTest {
         // A runner that never runs the work: any port call seen now would have happened outside it.
         doReturn(Mono.empty()).when(transactions).inTransaction(any());
 
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(transactions).inTransaction(any());
         verifyNoInteractions(markers, communityRepository, communityService, relationshipRepository, outbox);
@@ -132,14 +133,14 @@ class AccountErasureServiceTest {
 
     @Test
     void erase_shouldOpenExactlyOneTransaction_whenCalled() {
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(transactionsOpened).hasValue(1);
     }
 
     @Test
     void erase_shouldUseTheEventsDeletedAt_whenPresent() {
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(markers).markDeleted(USER, DELETED_AT);
     }
@@ -147,7 +148,7 @@ class AccountErasureServiceTest {
     @Test
     @DisplayName("a record from an older producer has no deletedAt: the clock stands in for it")
     void erase_shouldFallBackToTheClock_whenDeletedAtIsNull() {
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, null))).verifyComplete();
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, null))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(markers).markDeleted(USER, NOW);
     }
@@ -160,7 +161,7 @@ class AccountErasureServiceTest {
         when(communityService.leaveOnErasure(USER, first)).thenReturn(Mono.just(CommunityLeave.deleted()));
         when(communityService.leaveOnErasure(USER, second)).thenReturn(Mono.just(CommunityLeave.left()));
 
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectComplete().verify(Duration.ofSeconds(10));
 
         InOrder order = inOrder(communityService, relationshipRepository);
         order.verify(communityService).leaveOnErasure(USER, first);
@@ -171,7 +172,7 @@ class AccountErasureServiceTest {
     @Test
     @DisplayName("a replay finds no node any more, and still sweeps invitations and empty communities")
     void erase_shouldStillSweepInvitationsAndEmptyCommunities_whenTheNodeIsAlreadyGone() {
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(communityService, never()).leaveOnErasure(anyString(), any());
         verify(communityRepository).deleteInvitationsSentBy(USER);
@@ -184,8 +185,8 @@ class AccountErasureServiceTest {
         TechnicalException failure = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
         when(relationshipRepository.delete(USER)).thenReturn(Mono.error(failure));
 
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyErrorSatisfies(error ->
-                assertThat(error).isSameAs(failure));
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectErrorSatisfies(error ->
+                assertThat(error).isSameAs(failure)).verify(Duration.ofSeconds(10));
 
         verify(communityRepository, never()).deleteEmptyCommunitiesCreatedBy(anyString());
         verify(markers, never()).markErased(anyString(), any());
@@ -196,8 +197,8 @@ class AccountErasureServiceTest {
         TechnicalException failure = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
         when(markers.markDeleted(USER, DELETED_AT)).thenReturn(Mono.error(failure));
 
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyErrorSatisfies(error ->
-                assertThat(error).isSameAs(failure));
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectErrorSatisfies(error ->
+                assertThat(error).isSameAs(failure)).verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(communityRepository, communityService, relationshipRepository);
     }
@@ -209,8 +210,8 @@ class AccountErasureServiceTest {
         when(communityRepository.findJoined(USER)).thenReturn(Flux.just(club));
         when(communityService.leaveOnErasure(USER, club)).thenReturn(Mono.error(failure));
 
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyErrorSatisfies(error ->
-                assertThat(error).isSameAs(failure));
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectErrorSatisfies(error ->
+                assertThat(error).isSameAs(failure)).verify(Duration.ofSeconds(10));
 
         verify(relationshipRepository, never()).delete(anyString());
     }
@@ -218,10 +219,10 @@ class AccountErasureServiceTest {
     @Test
     void erase_shouldRefuseWithoutTouchingThePorts_whenTheUserIdIsBlank() {
         StepVerifier.create(service.erase(new UserDeletedEventDTO(" ", DELETED_AT)))
-                .verifyError(IllegalArgumentException.class);
+                .expectError(IllegalArgumentException.class).verify(Duration.ofSeconds(10));
         StepVerifier.create(service.erase(new UserDeletedEventDTO(null, DELETED_AT)))
-                .verifyError(IllegalArgumentException.class);
-        StepVerifier.create(service.erase(null)).verifyError(IllegalArgumentException.class);
+                .expectError(IllegalArgumentException.class).verify(Duration.ofSeconds(10));
+        StepVerifier.create(service.erase(null)).expectError(IllegalArgumentException.class).verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(transactions, markers, communityRepository, communityService, relationshipRepository,
                 outbox);
@@ -236,7 +237,7 @@ class AccountErasureServiceTest {
     void erase_shouldRecordARemovalPerFriend_afterDeletingTheNode() {
         when(relationshipRepository.findFriendSummaries(USER)).thenReturn(Flux.just(friend("bob", Closeness.FRIEND), friend("carol", Closeness.INTIMATE)));
 
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectComplete().verify(Duration.ofSeconds(10));
 
         InOrder order = inOrder(markers, relationshipRepository, outbox, communityRepository);
         order.verify(relationshipRepository).findFriendSummaries(USER);
@@ -250,7 +251,7 @@ class AccountErasureServiceTest {
     @Test
     @DisplayName("a replay finds no friendship any more, so it records nothing")
     void erase_shouldRecordNothing_whenTheUserHasNoFriendLeft() {
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(outbox);
     }
@@ -261,8 +262,8 @@ class AccountErasureServiceTest {
         when(relationshipRepository.findFriendSummaries(USER)).thenReturn(Flux.just(friend("bob", Closeness.FRIEND)));
         when(outbox.append(any())).thenReturn(Mono.error(failure));
 
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyErrorSatisfies(error ->
-                assertThat(error).isSameAs(failure));
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectErrorSatisfies(error ->
+                assertThat(error).isSameAs(failure)).verify(Duration.ofSeconds(10));
 
         verify(markers, never()).markErased(anyString(), any());
     }
@@ -272,8 +273,8 @@ class AccountErasureServiceTest {
         TechnicalException failure = new TechnicalException(TechnicalErrorCode.DATABASE_ERROR);
         when(relationshipRepository.findFriendSummaries(USER)).thenReturn(Flux.error(failure));
 
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyErrorSatisfies(error ->
-                assertThat(error).isSameAs(failure));
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectErrorSatisfies(error ->
+                assertThat(error).isSameAs(failure)).verify(Duration.ofSeconds(10));
 
         verify(relationshipRepository, never()).delete(anyString());
         verifyNoInteractions(outbox);
@@ -289,7 +290,7 @@ class AccountErasureServiceTest {
         when(communityService.leaveOnErasure(USER, shared)).thenReturn(Mono.just(CommunityLeave.handedOverTo("bob")));
         when(communityRepository.deleteEmptyCommunitiesCreatedBy(USER)).thenReturn(Flux.just("c9"));
 
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyComplete();
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectComplete().verify(Duration.ofSeconds(10));
 
         InOrder order = inOrder(markers, communityService);
         order.verify(markers).markErased(USER, NOW);
@@ -304,8 +305,8 @@ class AccountErasureServiceTest {
         when(communityService.leaveOnErasure(USER, alone)).thenReturn(Mono.just(CommunityLeave.deleted()));
         when(markers.markErased(anyString(), any())).thenReturn(Mono.error(failure));
 
-        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).verifyErrorSatisfies(error ->
-                assertThat(error).isSameAs(failure));
+        StepVerifier.create(service.erase(new UserDeletedEventDTO(USER, DELETED_AT))).expectErrorSatisfies(error ->
+                assertThat(error).isSameAs(failure)).verify(Duration.ofSeconds(10));
 
         verify(communityService, never()).discardPictures(any());
     }

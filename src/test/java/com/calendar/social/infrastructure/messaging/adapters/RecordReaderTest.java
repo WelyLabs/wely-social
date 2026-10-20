@@ -12,6 +12,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.Duration;
 
 class RecordReaderTest {
 
@@ -27,7 +28,7 @@ class RecordReaderTest {
                         {"userId":"u1","userName":"theo","hashtag":4271,"profilePicUrl":null}"""),
                         UserCreatedEventDTO.class, "T"))
                 .expectNext(new UserCreatedEventDTO("u1", "theo", 4271, null))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -35,7 +36,7 @@ class RecordReaderTest {
         StepVerifier.create(reader.read(record("""
                         {"userId":"u1","deletedAt":"2026-10-15T14:03:27.123Z"}"""), UserDeletedEventDTO.class, "T"))
                 .expectNext(new UserDeletedEventDTO("u1", Instant.parse("2026-10-15T14:03:27.123Z")))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -48,12 +49,12 @@ class RecordReaderTest {
         StepVerifier.create(strict.read(record("""
                         {"userId":"u1","deletedAt":null,"reason":"USER_REQUEST"}"""), UserDeletedEventDTO.class, "T"))
                 .expectNext(new UserDeletedEventDTO("u1", null))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     @DisplayName("an unreadable record is empty, not an error")
     void read_shouldBeEmpty_whenThePayloadIsNotJson() {
-        StepVerifier.create(reader.read(record("{not json"), UserDeletedEventDTO.class, "T")).verifyComplete();
+        StepVerifier.create(reader.read(record("{not json"), UserDeletedEventDTO.class, "T")).expectComplete().verify(Duration.ofSeconds(10));
     }
 }

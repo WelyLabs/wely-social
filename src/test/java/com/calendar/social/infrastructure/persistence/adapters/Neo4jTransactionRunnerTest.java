@@ -7,6 +7,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import java.time.Duration;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -25,7 +26,7 @@ class Neo4jTransactionRunnerTest {
 
         StepVerifier.create(new Neo4jTransactionRunner(transactionalOperator).inTransaction(work))
                 .expectNext("committed")
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         verify(transactionalOperator).transactional(work);
     }
 
@@ -35,6 +36,6 @@ class Neo4jTransactionRunnerTest {
 
         StepVerifier.create(new Neo4jTransactionRunner(transactionalOperator)
                         .inTransaction(Mono.error(new IllegalStateException("rolled back"))))
-                .verifyError(IllegalStateException.class);
+                .expectError(IllegalStateException.class).verify(Duration.ofSeconds(10));
     }
 }

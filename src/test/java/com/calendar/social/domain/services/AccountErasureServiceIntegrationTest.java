@@ -297,8 +297,8 @@ class AccountErasureServiceIntegrationTest {
 
         erase(ALICE);
 
-        StepVerifier.create(communities.findInvitation("token-sent-aaaaaaaaaa")).verifyComplete();
-        StepVerifier.create(communities.findInvitation("token-recv-aaaaaaaaaa")).verifyComplete();
+        StepVerifier.create(communities.findInvitation("token-sent-aaaaaaaaaa")).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(communities.findInvitation("token-recv-aaaaaaaaaa")).expectComplete().verify(Duration.ofSeconds(10));
         assertThat(communities.findInvitation("token-other-aaaaaaaa").block()).isNotNull();
         assertThat(count("MATCH ()-[i:INVITED {inviterId: $id}]->() RETURN count(i) AS c", Map.of("id", ALICE)))
                 .isZero();
@@ -347,7 +347,7 @@ class AccountErasureServiceIntegrationTest {
         long edges = count("MATCH ()-[r]->() RETURN count(r) AS c");
 
         StepVerifier.create(service.erase(new UserDeletedEventDTO(ALICE, DELETED_AT.plusSeconds(3600))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         DeletedUserNodeEntity replayed = markerNodes.findById(ALICE).block();
         assertThat(replayed.getDeletedAt().toInstant()).isEqualTo(DELETED_AT);
@@ -363,9 +363,9 @@ class AccountErasureServiceIntegrationTest {
         erase(ALICE);
 
         StepVerifier.create(relationshipService.writeUser(new UserCreatedEventDTO(ALICE, "alice", 1111, null)))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(relationshipService.updateUser(
-                new UserModifiedEventDTO(ALICE, "alice2", 1111, "Alice", "Martin", null))).verifyComplete();
+                new UserModifiedEventDTO(ALICE, "alice2", 1111, "Alice", "Martin", null))).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(nodeExists(ALICE)).isFalse();
         assertThat(relationships.existsByUserNameAndHashtag("alice2", 1111).block()).isFalse();
@@ -381,14 +381,14 @@ class AccountErasureServiceIntegrationTest {
         erase(ALICE);
 
         StepVerifier.create(relationshipService.sendFriendRequest(ALICE, "bob#2222", null))
-                .expectError(BusinessException.class).verify();
+                .expectError(BusinessException.class).verify(Duration.ofSeconds(10));
         StepVerifier.create(relationshipService.acceptFriendRequest(ALICE, DAVE))
-                .expectError(BusinessException.class).verify();
+                .expectError(BusinessException.class).verify(Duration.ofSeconds(10));
         StepVerifier.create(communityService.create(ALICE,
                         new CommunityDraft("Ghost club", null, List.of(), CommunityVisibility.PUBLIC)))
-                .expectError(BusinessException.class).verify();
+                .expectError(BusinessException.class).verify(Duration.ofSeconds(10));
         StepVerifier.create(communityService.invite(ALICE, publicClub.communityId(), BOB))
-                .expectError(BusinessException.class).verify();
+                .expectError(BusinessException.class).verify(Duration.ofSeconds(10));
         Community joined = communityService.join(ALICE, publicClub.communityId()).block();
 
         assertThat(joined.isMember()).isFalse();

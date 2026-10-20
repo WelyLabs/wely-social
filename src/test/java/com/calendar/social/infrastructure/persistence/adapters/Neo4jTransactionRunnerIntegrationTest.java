@@ -23,6 +23,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -79,7 +80,7 @@ class Neo4jTransactionRunnerIntegrationTest {
                         .then(Mono.defer(() -> relationships.delete(ALICE)))
                         .thenMany(Flux.defer(() -> communities.deleteEmptyCommunitiesCreatedBy(ALICE))).count()))
                 .expectNext(1L)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(count("MATCH (d:DeletedUser) RETURN count(d) AS c")).isEqualTo(1);
         assertThat(count("MATCH (u:User) RETURN count(u) AS c")).isZero();
@@ -96,7 +97,7 @@ class Neo4jTransactionRunnerIntegrationTest {
                         .then(Mono.defer(() -> relationships.delete(ALICE)))
                         .thenMany(Flux.defer(() -> communities.deleteEmptyCommunitiesCreatedBy(ALICE)))
                         .then(Mono.error(failure))))
-                .verifyErrorSatisfies(error -> assertThat(error).isSameAs(failure));
+                .expectErrorSatisfies(error -> assertThat(error).isSameAs(failure)).verify(Duration.ofSeconds(10));
 
         assertThat(count("MATCH (d:DeletedUser) RETURN count(d) AS c")).isZero();
         assertThat(count("MATCH (u:User {userId: 'alice-id'}) RETURN count(u) AS c")).isEqualTo(1);

@@ -27,6 +27,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Set;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -99,7 +100,7 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
         StepVerifier.create(adapter.create("ghost", new CommunityDraft("Club", null, List.of(), CommunityVisibility.PUBLIC), T0))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.USER_DOES_NOT_EXIST)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -127,7 +128,7 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
     @Test
     @DisplayName("an unknown community reads as empty")
     void findById_shouldBeEmptyForAnUnknownCommunity() {
-        StepVerifier.create(adapter.findById("nope", ALICE)).verifyComplete();
+        StepVerifier.create(adapter.findById("nope", ALICE)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -165,7 +166,7 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
 
     @Test
     void setPicture_shouldBeEmpty_forAnUnknownCommunity() {
-        StepVerifier.create(adapter.setPicture("missing", ALICE, "communities/missing/p.jpg")).verifyComplete();
+        StepVerifier.create(adapter.setPicture("missing", ALICE, "communities/missing/p.jpg")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -214,7 +215,7 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
     void roleOf_shouldBeEmptyForANonMember() {
         Community club = create(ALICE, "Club", CommunityVisibility.PUBLIC);
 
-        StepVerifier.create(adapter.roleOf(club.communityId(), BOB)).verifyComplete();
+        StepVerifier.create(adapter.roleOf(club.communityId(), BOB)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -244,7 +245,7 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
         assertThat(members.get(0).role()).isEqualTo(CommunityRole.ADMIN);
         assertThat(members.get(1).joinedAt()).isEqualTo(T0.plus(1, ChronoUnit.DAYS));
         assertThat(adapter.findLongestStandingMember(club.communityId(), Set.of(ALICE)).block()).isEqualTo(BOB);
-        StepVerifier.create(adapter.findLongestStandingMember("nope", Set.of(ALICE))).verifyComplete();
+        StepVerifier.create(adapter.findLongestStandingMember("nope", Set.of(ALICE))).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -263,7 +264,7 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
         assertThat(first.communityName()).isEqualTo("Club");
         assertThat(first.visibility()).isEqualTo(CommunityVisibility.PRIVATE);
         assertThat(second.expiresAt()).isEqualTo(sent.plus(CommunityInvitation.VALIDITY));
-        StepVerifier.create(adapter.findInvitation("token-one-aaaaaaaaaa")).verifyComplete();
+        StepVerifier.create(adapter.findInvitation("token-one-aaaaaaaaaa")).expectComplete().verify(Duration.ofSeconds(10));
         assertThat(adapter.findInvitations(club.communityId()).map(CommunityInvitation::token).collectList().block())
                 .containsExactly("token-two-bbbbbbbbbb");
     }
@@ -290,8 +291,8 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
 
         adapter.delete(club.communityId()).block();
 
-        StepVerifier.create(adapter.findById(club.communityId(), ALICE)).verifyComplete();
-        StepVerifier.create(adapter.findInvitation("token-bob-aaaaaaaaaa")).verifyComplete();
+        StepVerifier.create(adapter.findById(club.communityId(), ALICE)).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.findInvitation("token-bob-aaaaaaaaaa")).expectComplete().verify(Duration.ofSeconds(10));
         assertThat(adapter.findJoined(ALICE).collectList().block()).isEmpty();
         Long users = neo4jClient.query("MATCH (u:User) RETURN count(u) AS c")
                 .fetchAs(Long.class).mappedBy((t, r) -> r.get("c").asLong()).one().block();
@@ -330,7 +331,7 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
         adapter.addMember(club.communityId(), BOB, CommunityRole.MEMBER, T0.plus(1, ChronoUnit.DAYS)).block();
 
         assertThat(adapter.findLongestStandingMember(club.communityId(), Set.of(ALICE)).block()).isEqualTo(BOB);
-        StepVerifier.create(adapter.findLongestStandingMember(club.communityId(), Set.of(ALICE, BOB))).verifyComplete();
+        StepVerifier.create(adapter.findLongestStandingMember(club.communityId(), Set.of(ALICE, BOB))).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -351,16 +352,16 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
         adapter.saveInvitation(other.communityId(), ALICE, CAROL, "token-alice-2aaaaaaaa", T0, T0.plusSeconds(60)).block();
         adapter.saveInvitation(other.communityId(), BOB, ALICE, "token-bob-aaaaaaaaaaa", T0, T0.plusSeconds(60)).block();
 
-        StepVerifier.create(adapter.deleteInvitationsSentBy(ALICE)).expectNext(2L).verifyComplete();
+        StepVerifier.create(adapter.deleteInvitationsSentBy(ALICE)).expectNext(2L).expectComplete().verify(Duration.ofSeconds(10));
 
-        StepVerifier.create(adapter.findInvitation("token-alice-1aaaaaaaa")).verifyComplete();
-        StepVerifier.create(adapter.findInvitation("token-alice-2aaaaaaaa")).verifyComplete();
+        StepVerifier.create(adapter.findInvitation("token-alice-1aaaaaaaa")).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.findInvitation("token-alice-2aaaaaaaa")).expectComplete().verify(Duration.ofSeconds(10));
         assertThat(adapter.findInvitation("token-bob-aaaaaaaaaaa").block().inviteeId()).isEqualTo(ALICE);
     }
 
     @Test
     void deleteInvitationsSentBy_shouldReturnZero_whenThereAreNone() {
-        StepVerifier.create(adapter.deleteInvitationsSentBy(ALICE)).expectNext(0L).verifyComplete();
+        StepVerifier.create(adapter.deleteInvitationsSentBy(ALICE)).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -374,9 +375,9 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
         Community someoneElses = create(BOB, "Someone else's", CommunityVisibility.PUBLIC);
         adapter.removeMember(someoneElses.communityId(), BOB).block();
 
-        StepVerifier.create(adapter.deleteEmptyCommunitiesCreatedBy(ALICE)).expectNext(empty.communityId()).verifyComplete();
+        StepVerifier.create(adapter.deleteEmptyCommunitiesCreatedBy(ALICE)).expectNext(empty.communityId()).expectComplete().verify(Duration.ofSeconds(10));
 
-        StepVerifier.create(adapter.findById(empty.communityId(), ALICE)).verifyComplete();
+        StepVerifier.create(adapter.findById(empty.communityId(), ALICE)).expectComplete().verify(Duration.ofSeconds(10));
         assertThat(adapter.findById(stillUsed.communityId(), BOB).block()).isNotNull();
         assertThat(adapter.findById(someoneElses.communityId(), BOB).block()).isNotNull();
     }
@@ -385,6 +386,6 @@ class Neo4jCommunityRepositoryAdapterIntegrationTest {
     void deleteEmptyCommunitiesCreatedBy_shouldReturnNothing_whenNoneIsEmpty() {
         create(ALICE, "Club", CommunityVisibility.PUBLIC);
 
-        StepVerifier.create(adapter.deleteEmptyCommunitiesCreatedBy(ALICE)).verifyComplete();
+        StepVerifier.create(adapter.deleteEmptyCommunitiesCreatedBy(ALICE)).expectComplete().verify(Duration.ofSeconds(10));
     }
 }

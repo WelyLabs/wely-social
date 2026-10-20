@@ -21,6 +21,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -131,7 +132,7 @@ class KafkaFriendshipOutboxDispatcherTest {
     void dispatch_shouldSendTheChange_thenTheState_whenTheBinderTakesBoth() {
         when(streamBridge.send(anyString(), any(Message.class))).thenReturn(true);
 
-        StepVerifier.create(dispatcher.dispatch(accepted())).verifyComplete();
+        StepVerifier.create(dispatcher.dispatch(accepted())).expectComplete().verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<Message<?>> messages = ArgumentCaptor.forClass(Message.class);
         InOrder order = inOrder(streamBridge);
@@ -144,7 +145,7 @@ class KafkaFriendshipOutboxDispatcherTest {
     void dispatch_shouldSendOnlyTheChange_whenTheRecordDoesNotChangeTheFriendship() {
         when(streamBridge.send(anyString(), any(Message.class))).thenReturn(true);
 
-        StepVerifier.create(dispatcher.dispatch(ofType("REQUESTED"))).verifyComplete();
+        StepVerifier.create(dispatcher.dispatch(ofType("REQUESTED"))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(streamBridge).send(eq(KafkaFriendshipOutboxDispatcher.BINDING), any(Message.class));
         verify(streamBridge, never()).send(eq(KafkaFriendshipOutboxDispatcher.STATE_BINDING), any(Message.class));
@@ -155,8 +156,8 @@ class KafkaFriendshipOutboxDispatcherTest {
         when(streamBridge.send(eq(KafkaFriendshipOutboxDispatcher.BINDING), any(Message.class))).thenReturn(false);
 
         StepVerifier.create(dispatcher.dispatch(accepted()))
-                .verifyErrorSatisfies(error -> assertThat(((TechnicalException) error).getErrorCode())
-                        .isEqualTo(TechnicalErrorCode.BROKER_UNAVAILABLE));
+                .expectErrorSatisfies(error -> assertThat(((TechnicalException) error).getErrorCode())
+                        .isEqualTo(TechnicalErrorCode.BROKER_UNAVAILABLE)).verify(Duration.ofSeconds(10));
 
         verify(streamBridge, never()).send(eq(KafkaFriendshipOutboxDispatcher.STATE_BINDING), any(Message.class));
     }
@@ -167,8 +168,8 @@ class KafkaFriendshipOutboxDispatcherTest {
         when(streamBridge.send(eq(KafkaFriendshipOutboxDispatcher.STATE_BINDING), any(Message.class))).thenReturn(false);
 
         StepVerifier.create(dispatcher.dispatch(accepted()))
-                .verifyErrorSatisfies(error -> assertThat(((TechnicalException) error).getErrorCode())
-                        .isEqualTo(TechnicalErrorCode.BROKER_UNAVAILABLE));
+                .expectErrorSatisfies(error -> assertThat(((TechnicalException) error).getErrorCode())
+                        .isEqualTo(TechnicalErrorCode.BROKER_UNAVAILABLE)).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -176,7 +177,7 @@ class KafkaFriendshipOutboxDispatcherTest {
         when(streamBridge.send(eq(KafkaFriendshipOutboxDispatcher.BINDING), any(Message.class)))
                 .thenThrow(new IllegalStateException("timeout"));
 
-        StepVerifier.create(dispatcher.dispatch(accepted())).verifyError(IllegalStateException.class);
+        StepVerifier.create(dispatcher.dispatch(accepted())).expectError(IllegalStateException.class).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -187,10 +188,10 @@ class KafkaFriendshipOutboxDispatcherTest {
                 Mappers.getMapper(FriendshipStateMapper.class), json);
 
         StepVerifier.create(broken.dispatch(accepted()))
-                .verifyErrorSatisfies(error -> assertThat(error)
+                .expectErrorSatisfies(error -> assertThat(error)
                         .isInstanceOf(UnpublishableRecordException.class)
                         .hasMessageContaining("1760779800123")
-                        .hasCauseInstanceOf(IllegalArgumentException.class));
+                        .hasCauseInstanceOf(IllegalArgumentException.class)).verify(Duration.ofSeconds(10));
 
         verify(streamBridge, never()).send(anyString(), any(Message.class));
     }
@@ -200,7 +201,7 @@ class KafkaFriendshipOutboxDispatcherTest {
         FriendshipOutboxEventEntity event = accepted();
         event.setPairKey(null);
 
-        StepVerifier.create(dispatcher.dispatch(event)).verifyError(UnpublishableRecordException.class);
+        StepVerifier.create(dispatcher.dispatch(event)).expectError(UnpublishableRecordException.class).verify(Duration.ofSeconds(10));
 
         verify(streamBridge, never()).send(anyString(), any(Message.class));
     }

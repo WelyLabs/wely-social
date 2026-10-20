@@ -59,7 +59,7 @@ class Neo4jSchemaInitializerIntegrationTest {
         neo4jClient.query("CREATE (:DeletedUser {userId: 'twice'})").run().block();
         StepVerifier.create(neo4jClient.query("CREATE (:DeletedUser {userId: 'twice'})").run())
                 .expectErrorSatisfies(error -> assertThat(error).hasStackTraceContaining("already exists"))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -73,7 +73,7 @@ class Neo4jSchemaInitializerIntegrationTest {
         neo4jClient.query("CREATE (:FriendshipClock {name: 'friendship-events'})").run().block();
         StepVerifier.create(neo4jClient.query("CREATE (:FriendshipClock {name: 'friendship-events'})").run())
                 .expectErrorSatisfies(error -> assertThat(error).hasStackTraceContaining("already exists"))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -90,8 +90,8 @@ class Neo4jSchemaInitializerIntegrationTest {
     void start_shouldSucceed_whenTheConstraintAlreadyExists() {
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(constraints()).isEqualTo(1));
 
-        StepVerifier.create(initializer.ensureSchema()).expectNextCount(1).verifyComplete();
-        StepVerifier.create(initializer.ensureSchema()).expectNextCount(1).verifyComplete();
+        StepVerifier.create(initializer.ensureSchema()).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(initializer.ensureSchema()).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(constraints()).isEqualTo(1);
         assertThat(initializer.isRunning()).isTrue();

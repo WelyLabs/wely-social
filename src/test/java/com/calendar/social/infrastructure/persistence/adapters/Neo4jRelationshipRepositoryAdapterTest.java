@@ -32,6 +32,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import java.time.Duration;
 
 
 import static org.mockito.ArgumentMatchers.*;
@@ -76,7 +77,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
         when(userNodeRepository.upsert("id1", "user", 1234, "avatar")).thenReturn(Mono.just(entity));
 
         StepVerifier.create(adapter.save(event))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(userNodeRepository).upsert("id1", "user", 1234, "avatar");
         // save() would add another node on every replay of USER_CREATED.
@@ -89,8 +90,8 @@ class Neo4jRelationshipRepositoryAdapterTest {
         UserNodeEntity entity = new UserNodeEntity("id1", "user", 1234, "avatar");
         when(userNodeRepository.upsert("id1", "user", 1234, "avatar")).thenReturn(Mono.just(entity));
 
-        StepVerifier.create(adapter.save(event)).verifyComplete();
-        StepVerifier.create(adapter.save(event)).verifyComplete();
+        StepVerifier.create(adapter.save(event)).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.save(event)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(userNodeRepository, times(2)).upsert("id1", "user", 1234, "avatar");
         verify(userNodeRepository, never()).save(any());
@@ -106,7 +107,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.findAllWithSocialStatus("userId"))
                 .expectNext(dto)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
 
@@ -119,7 +120,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.findAllFriends("userId"))
                 .expectNext(dto)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
 
@@ -129,7 +130,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.existsByUserNameAndHashtag("user", 1234))
                 .expectNext(true)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
 
@@ -142,7 +143,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.findOutgoingRequests("userId"))
                 .expectNext(dto)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
 
@@ -155,7 +156,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.findIncomingRequests("userId"))
                 .expectNext(dto)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
 
@@ -168,7 +169,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.sendFriendRequest("u1", "u2", 1234, "event-1"))
                 .expectNext(dto)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
 
@@ -178,7 +179,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.sendFriendRequest("u1", "u2", 1234, null))
                 .expectError(BusinessException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -190,7 +191,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.acceptFriendRequest("u1", "u2"))
                 .expectNext(dto)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
 
@@ -200,7 +201,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.acceptFriendRequest("u1", "u2"))
                 .expectError(BusinessException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -212,7 +213,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.rejectFriendRequest("u1", "u2"))
                 .expectNext(dto)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
 
@@ -222,7 +223,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.rejectFriendRequest("u1", "u2"))
                 .expectError(BusinessException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -236,7 +237,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.deleteFriendship("u1", "u2"))
                 .expectNext(dto)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
 
@@ -246,14 +247,14 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.deleteFriendship("u1", "u2"))
                 .expectError(BusinessException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void delete_shouldDetachDeleteTheUserNode() {
         when(userNodeRepository.deleteUser("id1")).thenReturn(Mono.empty());
 
-        StepVerifier.create(adapter.delete("id1")).verifyComplete();
+        StepVerifier.create(adapter.delete("id1")).expectComplete().verify(Duration.ofSeconds(10));
 
         org.mockito.Mockito.verify(userNodeRepository).deleteUser("id1");
     }
@@ -267,7 +268,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.findFriendship("alice", "bob"))
                 .expectNext(friendship)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -279,7 +280,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.findFriendSummaries("alice"))
                 .expectNext(summary)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -287,7 +288,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
         Friendship changed = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, false, 1, null);
         when(userNodeRepository.updateCloseness("alice", "bob", "FRIEND", "CLOSE", "alice", 1L)).thenReturn(Mono.empty());
 
-        StepVerifier.create(adapter.updateCloseness("alice", changed, 1)).verifyComplete();
+        StepVerifier.create(adapter.updateCloseness("alice", changed, 1)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(userNodeRepository).updateCloseness("alice", "bob", "FRIEND", "CLOSE", "alice", 1L);
     }
@@ -312,7 +313,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
 
         StepVerifier.create(adapter.updateCloseness("alice", changed, 1))
                 .expectNext(written)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -321,7 +322,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
         when(userNodeRepository.upsert("id1", "camille_d", 4321, "avatar"))
                 .thenReturn(Mono.just(new UserNodeEntity("id1", "camille_d", 4321, "avatar")));
 
-        StepVerifier.create(adapter.update(renamed)).verifyComplete();
+        StepVerifier.create(adapter.update(renamed)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(userNodeRepository).upsert("id1", "camille_d", 4321, "avatar");
         verify(userNodeRepository, never()).save(any());
@@ -331,7 +332,7 @@ class Neo4jRelationshipRepositoryAdapterTest {
     void existsById_shouldAskTheRepository() {
         when(userNodeRepository.existsById("bob")).thenReturn(Mono.just(true));
 
-        StepVerifier.create(adapter.existsById("bob")).expectNext(true).verifyComplete();
+        StepVerifier.create(adapter.existsById("bob")).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -341,14 +342,14 @@ class Neo4jRelationshipRepositoryAdapterTest {
         when(userNodeRepository.findPerson("alice", "bob")).thenReturn(Mono.just(row));
         when(userNodeMapper.toPerson(row)).thenReturn(person);
 
-        StepVerifier.create(adapter.findPerson("alice", "bob")).expectNext(person).verifyComplete();
+        StepVerifier.create(adapter.findPerson("alice", "bob")).expectNext(person).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void findPerson_shouldBeEmpty_whenTheUserIsUnknown() {
         when(userNodeRepository.findPerson("alice", "nobody")).thenReturn(Mono.empty());
 
-        StepVerifier.create(adapter.findPerson("alice", "nobody")).verifyComplete();
+        StepVerifier.create(adapter.findPerson("alice", "nobody")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -358,6 +359,6 @@ class Neo4jRelationshipRepositoryAdapterTest {
         when(userNodeRepository.findMutualFriends("alice", "bob", 50)).thenReturn(Flux.just(carol));
         when(userNodeMapper.toUserNode(carol)).thenReturn(carolDto);
 
-        StepVerifier.create(adapter.findMutualFriends("alice", "bob", 50)).expectNext(carolDto).verifyComplete();
+        StepVerifier.create(adapter.findMutualFriends("alice", "bob", 50)).expectNext(carolDto).expectComplete().verify(Duration.ofSeconds(10));
     }
 }

@@ -7,6 +7,10 @@ import com.calendar.social.exception.TechnicalException;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.junit.jupiter.api.BeforeEach;
+import org.neo4j.driver.AuthTokens;
+import org.neo4j.driver.Config;
+import org.neo4j.driver.Driver;
+import org.neo4j.driver.GraphDatabase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,7 +22,14 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.net.ServerSocket;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,7 +57,7 @@ class PersistenceErrorAspectTest {
                 .expectErrorMatches(error -> error instanceof TechnicalException
                         && ((TechnicalException) error).getErrorCode()
                                 == TechnicalErrorCode.DATABASE_ERROR)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -56,9 +67,36 @@ class PersistenceErrorAspectTest {
         when(joinPoint.proceed()).thenReturn(Mono.error(driverFailure));
 
         StepVerifier.create((Mono<?>) aspect.translateFailures(joinPoint))
-                .verifyErrorSatisfies(error -> assertThat(error)
+                .expectErrorSatisfies(error -> assertThat(error)
                         .isInstanceOf(TechnicalException.class)
-                        .cause().isSameAs(driverFailure));
+                        .cause().isSameAs(driverFailure)).verify(Duration.ofSeconds(10));
+    }
+
+    @Test
+    @DisplayName("a real driver failure kept as cause carries no password into the logged trace")
+    void translateFailures_shouldKeepNoPasswordInTheTrace_ofARealDriverFailure() throws Throwable {
+        // Regression guard: the driver gets its password from AuthTokens, never from the URI, and
+        // its connection errors name the address only. If that changes, the ERROR log would leak it.
+        int closedPort;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            closedPort = socket.getLocalPort();
+        }
+        Throwable driverFailure;
+        try (Driver driver = GraphDatabase.driver("bolt://127.0.0.1:" + closedPort,
+                AuthTokens.basic("neo4j", "s3cr3t"),
+                Config.builder().withConnectionTimeout(1, TimeUnit.SECONDS).build())) {
+            driverFailure = catchThrowable(driver::verifyConnectivity);
+        }
+        when(joinPoint.proceed()).thenReturn(Mono.error(driverFailure));
+
+        StepVerifier.create((Mono<?>) aspect.translateFailures(joinPoint))
+                .expectErrorSatisfies(error -> {
+                    StringWriter trace = new StringWriter();
+                    error.printStackTrace(new PrintWriter(trace));
+                    assertThat(error.getCause()).isSameAs(driverFailure);
+                    assertThat(trace.toString()).contains("127.0.0.1:" + closedPort).doesNotContain("s3cr3t");
+                })
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -68,7 +106,7 @@ class PersistenceErrorAspectTest {
 
         StepVerifier.create((Flux<?>) aspect.translateFailures(joinPoint))
                 .expectError(TechnicalException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -78,7 +116,7 @@ class PersistenceErrorAspectTest {
         when(joinPoint.proceed()).thenReturn(Flux.error(driverFailure));
 
         StepVerifier.create((Flux<?>) aspect.translateFailures(joinPoint))
-                .verifyErrorSatisfies(error -> assertThat(error.getCause()).isSameAs(driverFailure));
+                .expectErrorSatisfies(error -> assertThat(error.getCause()).isSameAs(driverFailure)).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -92,7 +130,7 @@ class PersistenceErrorAspectTest {
         // is down": masking it as technical would answer 500 where 400 is correct.
         StepVerifier.create((Mono<?>) aspect.translateFailures(joinPoint))
                 .expectErrorMatches(error -> error == businessFailure)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -103,7 +141,7 @@ class PersistenceErrorAspectTest {
 
         StepVerifier.create((Mono<?>) aspect.translateFailures(joinPoint))
                 .expectErrorMatches(error -> error == alreadyTranslated)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -116,7 +154,7 @@ class PersistenceErrorAspectTest {
 
         StepVerifier.create(wrapped)
                 .expectNext("a", "b")
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test

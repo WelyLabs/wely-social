@@ -85,7 +85,7 @@ class UserEventsConsumerTest {
     void userCreated_shouldWriteEachRecordToTheGraph() {
         when(relationshipService.writeUser(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.userCreated().apply(Flux.just(created("u1"), created("u2")))).verifyComplete();
+        StepVerifier.create(consumer.userCreated().apply(Flux.just(created("u1"), created("u2")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(relationshipService).writeUser(new UserCreatedEventDTO("u1", "user-u1", 1234, null));
         verify(relationshipService).writeUser(new UserCreatedEventDTO("u2", "user-u2", 1234, null));
@@ -104,7 +104,7 @@ class UserEventsConsumerTest {
         AtomicInteger attempts = new AtomicInteger();
         when(relationshipService.writeUser(any())).thenReturn(failing(attempts));
 
-        StepVerifier.create(consumer.userCreated().apply(Flux.just(created("u1")))).verifyComplete();
+        StepVerifier.create(consumer.userCreated().apply(Flux.just(created("u1")))).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(attempts).hasValue((int) MAX_RETRIES + 1);
     }
@@ -118,7 +118,7 @@ class UserEventsConsumerTest {
         when(relationshipService.writeUser(nextEvent)).thenReturn(Mono.empty());
 
         StepVerifier.create(consumer.userCreated().apply(Flux.just(created("fails"), created("succeeds"))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(relationshipService, times((int) MAX_RETRIES + 1)).writeUser(failingEvent);
         verify(relationshipService).writeUser(nextEvent);
@@ -129,7 +129,7 @@ class UserEventsConsumerTest {
         when(relationshipService.writeUser(any())).thenReturn(Mono.empty());
 
         StepVerifier.create(consumer.userCreated().apply(Flux.just(record("{not json"), created("u2"))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(relationshipService, times(1)).writeUser(any());
     }
@@ -137,14 +137,14 @@ class UserEventsConsumerTest {
     @Test
     void userCreated_shouldDropTheRecord_whenItHasNoUserId() {
         StepVerifier.create(consumer.userCreated().apply(Flux.just(record("{\"userName\":\"x\",\"hashtag\":1}"))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(relationshipService);
     }
 
     @Test
     void userCreated_shouldComplete_whenTheStreamIsEmpty() {
-        StepVerifier.create(consumer.userCreated().apply(Flux.empty())).verifyComplete();
+        StepVerifier.create(consumer.userCreated().apply(Flux.empty())).expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(relationshipService);
     }
@@ -155,7 +155,7 @@ class UserEventsConsumerTest {
     void userModified_shouldApplyEachProfileToTheGraph() {
         when(relationshipService.updateUser(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.userModified().apply(Flux.just(modified("u1")))).verifyComplete();
+        StepVerifier.create(consumer.userModified().apply(Flux.just(modified("u1")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(relationshipService).updateUser(new UserModifiedEventDTO("u1", "camille_d", 4321, "Cam", "Dupont", null));
     }
@@ -169,7 +169,7 @@ class UserEventsConsumerTest {
         when(relationshipService.updateUser(failingEvent)).thenReturn(failing(attempts));
         when(relationshipService.updateUser(nextEvent)).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.userModified().apply(Flux.just(modified("u1"), modified("u2")))).verifyComplete();
+        StepVerifier.create(consumer.userModified().apply(Flux.just(modified("u1"), modified("u2")))).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(attempts).hasValue((int) MAX_RETRIES + 1);
         verify(relationshipService).updateUser(nextEvent);
@@ -177,7 +177,7 @@ class UserEventsConsumerTest {
 
     @Test
     void userModified_shouldDropTheRecord_whenItHasNoUserId() {
-        StepVerifier.create(consumer.userModified().apply(Flux.just(record("{\"userId\":\" \"}")))).verifyComplete();
+        StepVerifier.create(consumer.userModified().apply(Flux.just(record("{\"userId\":\" \"}")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(relationshipService);
     }
@@ -188,7 +188,7 @@ class UserEventsConsumerTest {
     void userDeleted_shouldEraseEachUser() {
         when(accountErasureService.erase(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.userDeleted().apply(Flux.just(deleted("u1"), deleted("u2")))).verifyComplete();
+        StepVerifier.create(consumer.userDeleted().apply(Flux.just(deleted("u1"), deleted("u2")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(accountErasureService, times(2)).erase(any());
         verifyNoInteractions(relationshipService);
@@ -198,7 +198,7 @@ class UserEventsConsumerTest {
     void userDeleted_shouldReadDeletedAtAsAnInstant_whenTheRecordCarriesIt() {
         when(accountErasureService.erase(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.userDeleted().apply(Flux.just(deleted("u1")))).verifyComplete();
+        StepVerifier.create(consumer.userDeleted().apply(Flux.just(deleted("u1")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(accountErasureService).erase(new UserDeletedEventDTO("u1", DELETED_AT));
     }
@@ -208,7 +208,7 @@ class UserEventsConsumerTest {
     void userDeleted_shouldPassANullDeletedAt_whenTheRecordComesFromAnOlderProducer() {
         when(accountErasureService.erase(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.userDeleted().apply(Flux.just(record("{\"userId\":\"u1\"}")))).verifyComplete();
+        StepVerifier.create(consumer.userDeleted().apply(Flux.just(record("{\"userId\":\"u1\"}")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(accountErasureService).erase(new UserDeletedEventDTO("u1", null));
     }
@@ -221,7 +221,7 @@ class UserEventsConsumerTest {
         when(accountErasureService.erase(failingEvent)).thenReturn(failing(attempts));
         when(accountErasureService.erase(nextEvent)).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.userDeleted().apply(Flux.just(deleted("fails"), deleted("next")))).verifyComplete();
+        StepVerifier.create(consumer.userDeleted().apply(Flux.just(deleted("fails"), deleted("next")))).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(attempts).hasValue((int) MAX_RETRIES + 1);
         verify(accountErasureService).erase(nextEvent);
@@ -230,7 +230,7 @@ class UserEventsConsumerTest {
     @Test
     void userDeleted_shouldDropTheRecord_whenItHasNoUserId() {
         StepVerifier.create(consumer.userDeleted().apply(Flux.just(record("{\"deletedAt\":\"2026-10-15T14:03:27Z\"}"))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(accountErasureService, never()).erase(any());
     }
@@ -239,7 +239,7 @@ class UserEventsConsumerTest {
     void userDeleted_shouldSkipTheRecord_whenItIsNotJson() {
         when(accountErasureService.erase(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.userDeleted().apply(Flux.just(record("not json"), deleted("u2")))).verifyComplete();
+        StepVerifier.create(consumer.userDeleted().apply(Flux.just(record("not json"), deleted("u2")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(accountErasureService).erase(new UserDeletedEventDTO("u2", DELETED_AT));
         verify(accountErasureService, times(1)).erase(any());
@@ -253,7 +253,7 @@ class UserEventsConsumerTest {
         when(accountErasureService.erase(throwingEvent)).thenThrow(new IllegalStateException("thrown, not signalled"));
         when(accountErasureService.erase(nextEvent)).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.userDeleted().apply(Flux.just(deleted("u1"), deleted("u2")))).verifyComplete();
+        StepVerifier.create(consumer.userDeleted().apply(Flux.just(deleted("u1"), deleted("u2")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(accountErasureService, times((int) MAX_RETRIES + 1)).erase(throwingEvent);
         verify(accountErasureService).erase(nextEvent);

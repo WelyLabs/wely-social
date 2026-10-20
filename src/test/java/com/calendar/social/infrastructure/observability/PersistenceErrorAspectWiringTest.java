@@ -18,6 +18,7 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -81,7 +82,7 @@ class PersistenceErrorAspectWiringTest {
                 .expectErrorMatches(error -> error instanceof TechnicalException
                         && ((TechnicalException) error).getErrorCode()
                                 == TechnicalErrorCode.DATABASE_ERROR)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -92,6 +93,6 @@ class PersistenceErrorAspectWiringTest {
 
         StepVerifier.create(adapter.findAllWithSocialStatus("user-1"))
                 .expectError(TechnicalException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 }

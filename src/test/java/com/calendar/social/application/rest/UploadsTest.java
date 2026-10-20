@@ -13,6 +13,7 @@ import org.springframework.util.MultiValueMap;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import java.time.Duration;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -42,41 +43,41 @@ class UploadsTest {
     void fileOf_shouldReadTheWholeFile() {
         StepVerifier.create(Uploads.fileOf(form(file(1234))))
                 .expectNextMatches(bytes -> bytes.length == 1234)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void fileOf_shouldAcceptExactly10Megabytes() {
         StepVerifier.create(Uploads.fileOf(form(file(Uploads.MAX_BYTES))))
                 .expectNextMatches(bytes -> bytes.length == Uploads.MAX_BYTES)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void fileOf_shouldRefuseAFileOver10Megabytes_asTooLarge() {
         StepVerifier.create(Uploads.fileOf(form(file(Uploads.MAX_BYTES + 1))))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_PICTURE_TOO_LARGE))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void fileOf_shouldRefuseAFormWithoutFile() {
         StepVerifier.create(Uploads.fileOf(form(null)))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_PICTURE_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void fileOf_shouldRefuseATextFieldNamedFile() {
         StepVerifier.create(Uploads.fileOf(form(mock(FormFieldPart.class))))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_PICTURE_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void fileOf_shouldRefuseAnEmptyFile() {
         StepVerifier.create(Uploads.fileOf(form(file(0))))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.COMMUNITY_PICTURE_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 }

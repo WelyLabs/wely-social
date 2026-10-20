@@ -52,7 +52,7 @@ class DeletedUsersReconciliationLoopTest {
     void passOnce_shouldWaitTheInterval_whenThePassIsClean() {
         when(reconciliation.reconcile()).thenReturn(Mono.just(new ReconciliationReport(3, 1, 0)));
 
-        StepVerifier.create(loop(SHORT, INTERVAL, RETRY_INTERVAL).passOnce()).expectNext(INTERVAL).verifyComplete();
+        StepVerifier.create(loop(SHORT, INTERVAL, RETRY_INTERVAL).passOnce()).expectNext(INTERVAL).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -62,7 +62,7 @@ class DeletedUsersReconciliationLoopTest {
 
         StepVerifier.create(loop(SHORT, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -71,7 +71,7 @@ class DeletedUsersReconciliationLoopTest {
 
         StepVerifier.create(loop(SHORT, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -80,7 +80,7 @@ class DeletedUsersReconciliationLoopTest {
 
         StepVerifier.create(loop(SHORT, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -115,7 +115,7 @@ class DeletedUsersReconciliationLoopTest {
 
         StepVerifier.create(loop(SHORT, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test

@@ -4,7 +4,12 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
+import org.springframework.mock.web.server.MockServerWebExchange;
+import org.springframework.web.server.MethodNotAllowedException;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import jakarta.validation.Valid;
@@ -15,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
+
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -54,6 +61,11 @@ class GlobalErrorHandlerTest {
         @GetMapping("/not-allowed")
         Mono<Void> notAllowed() {
             return Mono.error(new ResponseStatusException(HttpStatus.METHOD_NOT_ALLOWED));
+        }
+
+        @GetMapping("/method-not-allowed")
+        Mono<Void> methodNotAllowed() {
+            return Mono.error(new MethodNotAllowedException(HttpMethod.GET, Set.of(HttpMethod.PUT)));
         }
 
         @PostMapping("/validated")
@@ -96,7 +108,7 @@ class GlobalErrorHandlerTest {
     void handleBusinessException_shouldNotCountATechnicalFailure() {
         client.get().uri("/business-error").exchange().expectStatus().isNotFound();
 
-        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METER).counters()).isEmpty();
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC).counters()).isEmpty();
     }
 
     @Test
@@ -130,8 +142,8 @@ class GlobalErrorHandlerTest {
         client.get().uri("/technical-error").exchange().expectStatus().isEqualTo(502);
 
         assertThat(technicalCount("SCL-TEC-001")).isEqualTo(2.0);
-        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METER)
-                .tag(GlobalErrorHandler.CODE_TAG, GlobalErrorHandler.UNEXPECTED_ERROR_CODE).counter()).isNull();
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                .tag(GlobalErrorHandler.CODE_TAG, GlobalErrorHandler.UNEXPECTED_FAILURE_CODE).counter()).isNull();
     }
 
     @Test
@@ -141,7 +153,7 @@ class GlobalErrorHandlerTest {
                 .exchange()
                 .expectStatus().is5xxServerError()
                 .expectBody()
-                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.UNEXPECTED_ERROR_CODE)
+                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)
                 .jsonPath("$.requestId").value(GlobalErrorHandlerTest::assertNotBlank)
                 .jsonPath("$.detail").isEqualTo("The request could not be completed.")
                 // The exception message carried a connection string with a password:
@@ -169,7 +181,7 @@ class GlobalErrorHandlerTest {
                 .jsonPath("$.code").isEqualTo(GlobalErrorHandler.REQUEST_REFUSED_CODE)
                 .jsonPath("$.requestId").value(GlobalErrorHandlerTest::assertNotBlank);
 
-        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METER).counters()).isEmpty();
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC).counters()).isEmpty();
     }
 
     @Test
@@ -189,7 +201,7 @@ class GlobalErrorHandlerTest {
     void handleUnexpectedException_shouldCountTheFailure() {
         client.get().uri("/generic-error").exchange().expectStatus().is5xxServerError();
 
-        assertThat(technicalCount(GlobalErrorHandler.UNEXPECTED_ERROR_CODE)).isEqualTo(1.0);
+        assertThat(technicalCount(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)).isEqualTo(1.0);
     }
 
     @Test
@@ -202,15 +214,47 @@ class GlobalErrorHandlerTest {
                 .expectStatus().isBadRequest()
                 .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)
                 .expectBody()
-                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.VALIDATION_ERROR_CODE)
+                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.VALIDATION_FAILED_CODE)
                 .jsonPath("$.errors.name").exists()
                 .jsonPath("$.requestId").value(GlobalErrorHandlerTest::assertNotBlank);
 
-        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METER).counters()).isEmpty();
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC).counters()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a 405 keeps the Allow header the status calls for")
+    void handleResponseStatusException_shouldKeepTheStatusHeaders() {
+        client.get().uri("/method-not-allowed")
+                .exchange()
+                .expectStatus().isEqualTo(405)
+                .expectHeader().valueEquals(HttpHeaders.ALLOW, "PUT")
+                .expectBody()
+                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.REQUEST_REFUSED_CODE);
+    }
+
+    @Test
+    @DisplayName("handle maps each failure as its own handler would")
+    void handle_shouldMapEachFailureAsItsHandler() {
+        MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/x"));
+        GlobalErrorHandler handler = new GlobalErrorHandler(meterRegistry);
+
+        assertThat(handler.handle(new BusinessException(BusinessErrorCode.USER_DOES_NOT_EXIST), exchange)
+                .getProperties()).containsEntry(GlobalErrorHandler.CODE_TAG, "SCL-BUS-005");
+        assertThat(handler.handle(new TechnicalException(TechnicalErrorCode.BROKER_UNAVAILABLE), exchange)
+                .getStatus()).isEqualTo(502);
+        assertThat(handler.handle(new ResponseStatusException(HttpStatus.NOT_FOUND), exchange)
+                .getProperties()).containsEntry(GlobalErrorHandler.CODE_TAG, GlobalErrorHandler.REQUEST_REFUSED_CODE);
+        assertThat(handler.handle(new AssertionError("not even an Exception"), exchange)
+                .getProperties())
+                .containsEntry(GlobalErrorHandler.CODE_TAG, GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)
+                .containsEntry(GlobalErrorHandler.REQUEST_ID_PROPERTY, exchange.getRequest().getId());
+
+        assertThat(technicalCount("SCL-TEC-002")).isEqualTo(1.0);
+        assertThat(technicalCount(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)).isEqualTo(1.0);
     }
 
     private double technicalCount(String code) {
-        return meterRegistry.get(GlobalErrorHandler.TECHNICAL_ERRORS_METER)
+        return meterRegistry.get(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
                 .tag(GlobalErrorHandler.CODE_TAG, code)
                 .counter()
                 .count();

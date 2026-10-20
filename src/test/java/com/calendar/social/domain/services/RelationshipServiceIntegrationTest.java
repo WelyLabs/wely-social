@@ -110,7 +110,7 @@ class RelationshipServiceIntegrationTest {
         neo4jClient.query("MATCH (c:FriendshipClock) SET c.value = $v").bind(FAR_FUTURE).to("v").run().block();
         neo4jClient.query("CREATE (:FriendshipOutboxEvent {version: $v})").bind(FAR_FUTURE + 1).to("v").run().block();
 
-        StepVerifier.create(service.acceptFriendRequest(BOB, ALICE)).expectError().verify();
+        StepVerifier.create(service.acceptFriendRequest(BOB, ALICE)).expectError().verify(Duration.ofSeconds(10));
 
         assertThat(status()).isEqualTo("PENDING");
         assertThat(count("MATCH (e:FriendshipOutboxEvent {type: 'ACCEPTED'}) RETURN count(e) AS c")).isZero();
