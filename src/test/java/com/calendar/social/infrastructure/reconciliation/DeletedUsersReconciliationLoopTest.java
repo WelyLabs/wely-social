@@ -2,8 +2,11 @@ package com.calendar.social.infrastructure.reconciliation;
 
 import com.calendar.social.domain.models.ReconciliationReport;
 import com.calendar.social.domain.services.AccountReconciliationService;
+import com.calendar.social.exception.GlobalErrorHandler;
 import com.calendar.social.exception.TechnicalErrorCode;
+import com.calendar.social.exception.TechnicalErrorCounter;
 import com.calendar.social.exception.TechnicalException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -37,15 +40,19 @@ class DeletedUsersReconciliationLoopTest {
     @Mock
     private AccountReconciliationService reconciliation;
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
     // Boot's conversion service, as in the application, so the "1m" / "24h" / "1h" defaults are parsed too.
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withInitializer(context -> context.getBeanFactory()
                     .setConversionService(ApplicationConversionService.getSharedInstance()))
             .withUserConfiguration(DeletedUsersReconciliationLoop.class)
-            .withBean(AccountReconciliationService.class, () -> mock(AccountReconciliationService.class));
+            .withBean(AccountReconciliationService.class, () -> mock(AccountReconciliationService.class))
+            .withBean(TechnicalErrorCounter.class, () -> new TechnicalErrorCounter(new SimpleMeterRegistry()));
 
     private DeletedUsersReconciliationLoop loop(Duration initialDelay, Duration interval, Duration retryInterval) {
-        return new DeletedUsersReconciliationLoop(reconciliation, initialDelay, interval, retryInterval);
+        return new DeletedUsersReconciliationLoop(reconciliation, new TechnicalErrorCounter(meterRegistry),
+                initialDelay, interval, retryInterval);
     }
 
     @Test
@@ -63,6 +70,32 @@ class DeletedUsersReconciliationLoopTest {
         StepVerifier.create(loop(SHORT, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
                 .expectComplete().verify(Duration.ofSeconds(10));
+    }
+
+    @Test
+    void passOnce_shouldCountAFailedPass_underItsCode() {
+        when(reconciliation.reconcile())
+                .thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.USERS_UNAVAILABLE)));
+
+        StepVerifier.create(loop(SHORT, INTERVAL, RETRY_INTERVAL).passOnce())
+                .expectNext(RETRY_INTERVAL)
+                .expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(meterRegistry.get(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                .tag(GlobalErrorHandler.CODE_TAG, "SCL-TEC-003")
+                .tag(GlobalErrorHandler.SOURCE_TAG, GlobalErrorHandler.SOURCE_RECONCILIATION)
+                .counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void passOnce_shouldNotCount_whenThePassIsClean() {
+        when(reconciliation.reconcile()).thenReturn(Mono.just(new ReconciliationReport(3, 3, 0)));
+
+        StepVerifier.create(loop(SHORT, INTERVAL, RETRY_INTERVAL).passOnce())
+                .expectNext(INTERVAL)
+                .expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC).counters()).isEmpty();
     }
 
     @Test

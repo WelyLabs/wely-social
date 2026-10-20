@@ -1,5 +1,7 @@
 package com.calendar.social.infrastructure.messaging.adapters;
 
+import com.calendar.social.exception.GlobalErrorHandler;
+import com.calendar.social.exception.TechnicalErrorCounter;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserDeletedEventDTO;
 import com.calendar.social.domain.models.UserModifiedEventDTO;
@@ -30,6 +32,7 @@ public class UserEventsConsumer {
     private final RelationshipService relationshipService;
     private final AccountErasureService accountErasureService;
     private final RecordReader reader;
+    private final TechnicalErrorCounter errorCounter;
     private final long maxRetries;
     private final Retry retry;
 
@@ -37,12 +40,14 @@ public class UserEventsConsumer {
             RelationshipService relationshipService,
             AccountErasureService accountErasureService,
             RecordReader reader,
+            TechnicalErrorCounter errorCounter,
             @Value("${app.consumers.retry.max-retries:5}") long maxRetries,
             @Value("${app.consumers.retry.first-backoff:1s}") Duration firstBackoff,
             @Value("${app.consumers.retry.max-backoff:30s}") Duration maxBackoff) {
         this.relationshipService = relationshipService;
         this.accountErasureService = accountErasureService;
         this.reader = reader;
+        this.errorCounter = errorCounter;
         this.maxRetries = maxRetries;
         // The last failure itself, not Reactor's "retries exhausted" wrapper, reaches the log.
         this.retry = Retry.backoff(maxRetries, firstBackoff)
@@ -86,6 +91,7 @@ public class UserEventsConsumer {
                 .doOnSuccess(unused -> log.debug("{} applied, userId={}", topic, userId))
                 .onErrorResume(error -> {
                     logExhausted(topic, userId, error);
+                    errorCounter.count(error, GlobalErrorHandler.SOURCE_KAFKA);
                     return Mono.empty();
                 });
     }

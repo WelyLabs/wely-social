@@ -81,7 +81,7 @@ class GlobalErrorHandlerTest {
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
         client = WebTestClient.bindToController(new TestController())
-                .controllerAdvice(new GlobalErrorHandler(meterRegistry))
+                .controllerAdvice(new GlobalErrorHandler(new TechnicalErrorCounter(meterRegistry)))
                 .build();
     }
 
@@ -236,7 +236,7 @@ class GlobalErrorHandlerTest {
     @DisplayName("handle maps each failure as its own handler would")
     void handle_shouldMapEachFailureAsItsHandler() {
         MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/x"));
-        GlobalErrorHandler handler = new GlobalErrorHandler(meterRegistry);
+        GlobalErrorHandler handler = new GlobalErrorHandler(new TechnicalErrorCounter(meterRegistry));
 
         assertThat(handler.handle(new BusinessException(BusinessErrorCode.USER_DOES_NOT_EXIST), exchange)
                 .getProperties()).containsEntry(GlobalErrorHandler.CODE_TAG, "SCL-BUS-005");
@@ -255,6 +255,7 @@ class GlobalErrorHandlerTest {
 
     private double technicalCount(String code) {
         return meterRegistry.get(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                .tag(GlobalErrorHandler.SOURCE_TAG, GlobalErrorHandler.SOURCE_HTTP)
                 .tag(GlobalErrorHandler.CODE_TAG, code)
                 .counter()
                 .count();

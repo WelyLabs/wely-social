@@ -1,5 +1,7 @@
 package com.calendar.social.infrastructure.reconciliation;
 
+import com.calendar.social.exception.GlobalErrorHandler;
+import com.calendar.social.exception.TechnicalErrorCounter;
 import com.calendar.social.domain.models.ReconciliationReport;
 import com.calendar.social.domain.services.AccountReconciliationService;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +22,7 @@ import java.time.Duration;
 public class DeletedUsersReconciliationLoop implements SmartLifecycle {
 
     private final AccountReconciliationService reconciliation;
+    private final TechnicalErrorCounter errorCounter;
     private final Duration initialDelay;
     private final Duration interval;
     private final Duration retryInterval;
@@ -28,10 +31,12 @@ public class DeletedUsersReconciliationLoop implements SmartLifecycle {
 
     public DeletedUsersReconciliationLoop(
             AccountReconciliationService reconciliation,
+            TechnicalErrorCounter errorCounter,
             @Value("${app.account-erasure.reconciliation.initial-delay:1m}") Duration initialDelay,
             @Value("${app.account-erasure.reconciliation.interval:24h}") Duration interval,
             @Value("${app.account-erasure.reconciliation.retry-interval:1h}") Duration retryInterval) {
         this.reconciliation = reconciliation;
+        this.errorCounter = errorCounter;
         this.initialDelay = initialDelay;
         this.interval = interval;
         this.retryInterval = retryInterval;
@@ -45,7 +50,10 @@ public class DeletedUsersReconciliationLoop implements SmartLifecycle {
                 .expand(next -> Mono.delay(next).then(Mono.defer(this::passOnce)))
                 .subscribe(
                         next -> { },
-                        error -> log.error("Deleted-users reconciliation loop terminated and will not restart", error),
+                        error -> {
+                            log.error("Deleted-users reconciliation loop terminated and will not restart", error);
+                            errorCounter.count(error, GlobalErrorHandler.SOURCE_RECONCILIATION);
+                        },
                         () -> log.error("Deleted-users reconciliation loop completed and will not restart"));
         log.info("Deleted-users reconciliation started: first pass in {}, then every {}, {} after a failed pass",
                 initialDelay, interval, retryInterval);
@@ -75,6 +83,7 @@ public class DeletedUsersReconciliationLoop implements SmartLifecycle {
                 .onErrorResume(error -> {
                     log.warn("Deleted-users reconciliation failed; next attempt in {}: {}", retryInterval,
                             error.toString());
+                    errorCounter.count(error, GlobalErrorHandler.SOURCE_RECONCILIATION);
                     return Mono.just(retryInterval);
                 });
     }

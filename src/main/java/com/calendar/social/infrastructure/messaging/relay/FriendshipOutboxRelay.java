@@ -1,5 +1,7 @@
 package com.calendar.social.infrastructure.messaging.relay;
 
+import com.calendar.social.exception.GlobalErrorHandler;
+import com.calendar.social.exception.TechnicalErrorCounter;
 import com.calendar.social.infrastructure.messaging.adapters.KafkaFriendshipOutboxDispatcher;
 import com.calendar.social.infrastructure.persistence.adapters.Neo4jFriendshipOutboxAdapter;
 import com.calendar.social.infrastructure.persistence.models.entities.FriendshipOutboxEventEntity;
@@ -47,6 +49,7 @@ public class FriendshipOutboxRelay implements SmartLifecycle {
 
     private final Neo4jFriendshipOutboxAdapter outbox;
     private final KafkaFriendshipOutboxDispatcher dispatcher;
+    private final TechnicalErrorCounter errorCounter;
     private final Duration pollInterval;
     private final int batchSize;
     private final long maxAttempts;
@@ -62,6 +65,7 @@ public class FriendshipOutboxRelay implements SmartLifecycle {
     public FriendshipOutboxRelay(
             Neo4jFriendshipOutboxAdapter outbox,
             KafkaFriendshipOutboxDispatcher dispatcher,
+            TechnicalErrorCounter errorCounter,
             @Value("${app.friendship-outbox.relay.poll-interval:2s}") Duration pollInterval,
             @Value("${app.friendship-outbox.relay.batch-size:100}") int batchSize,
             @Value("${app.friendship-outbox.relay.max-attempts:20}") long maxAttempts,
@@ -71,6 +75,7 @@ public class FriendshipOutboxRelay implements SmartLifecycle {
             @Value("${app.friendship-outbox.purge.batch-size:10000}") int purgeBatchSize) {
         this.outbox = outbox;
         this.dispatcher = dispatcher;
+        this.errorCounter = errorCounter;
         this.pollInterval = pollInterval;
         this.batchSize = batchSize;
         this.maxAttempts = maxAttempts;
@@ -115,12 +120,16 @@ public class FriendshipOutboxRelay implements SmartLifecycle {
         return Mono.defer(pass)
                 .onErrorResume(error -> {
                     log.error("Friendship outbox {} pass failed; next attempt in {}", name, delay.get(), error);
+                    errorCounter.count(error, GlobalErrorHandler.SOURCE_OUTBOX);
                     return Mono.just(0L);
                 })
                 .repeatWhen(passes -> passes.concatMap(done -> Mono.delay(delay.get())))
                 .subscribe(
                         count -> { },
-                        error -> log.error("Friendship outbox {} loop terminated and will not restart", name, error));
+                        error -> {
+                            log.error("Friendship outbox {} loop terminated and will not restart", name, error);
+                            errorCounter.count(error, GlobalErrorHandler.SOURCE_OUTBOX);
+                        });
     }
 
     /** The poll interval after a clean pass; doubled for each failed pass in a row, up to max-backoff. */
@@ -168,6 +177,7 @@ public class FriendshipOutboxRelay implements SmartLifecycle {
     /** The payload is not logged: it names users. */
     private Mono<Outcome> handleFailure(FriendshipOutboxEventEntity event, Throwable error) {
         long attempt = (event.getAttempts() == null ? 0 : event.getAttempts()) + 1;
+        errorCounter.count(error, GlobalErrorHandler.SOURCE_OUTBOX);
         boolean retriable = PublicationErrorClassifier.isRetriable(error);
         if (!retriable || attempt >= maxAttempts) {
             return park(event, attempt, retriable, error);
@@ -180,7 +190,10 @@ public class FriendshipOutboxRelay implements SmartLifecycle {
                     event.getVersion(), event.getType(), attempt, describe(error));
         }
         return outbox.recordFailure(event.getVersion(), describe(error))
-                .onErrorResume(recordError -> Mono.just(0L))
+                .onErrorResume(recordError -> {
+                    errorCounter.count(recordError, GlobalErrorHandler.SOURCE_OUTBOX);
+                    return Mono.just(0L);
+                })
                 .thenReturn(Outcome.RETRY_LATER);
     }
 
@@ -192,6 +205,7 @@ public class FriendshipOutboxRelay implements SmartLifecycle {
         return outbox.park(event.getVersion(), describe(error))
                 .thenReturn(Outcome.PARKED)
                 .onErrorResume(parkError -> {
+                    errorCounter.count(parkError, GlobalErrorHandler.SOURCE_OUTBOX);
                     log.error("FRIENDSHIP_CHANGED record {} could not be parked; retried next pass: {}",
                             event.getVersion(), parkError.toString());
                     return Mono.just(Outcome.RETRY_LATER);

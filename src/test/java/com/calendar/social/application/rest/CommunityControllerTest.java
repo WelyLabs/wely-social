@@ -13,6 +13,7 @@ import com.calendar.social.domain.services.CommunityService;
 import com.calendar.social.exception.BusinessErrorCode;
 import com.calendar.social.exception.BusinessException;
 import com.calendar.social.exception.GlobalErrorHandler;
+import com.calendar.social.exception.TechnicalErrorCounter;
 import com.calendar.social.exception.TechnicalErrorCode;
 import com.calendar.social.exception.TechnicalException;
 import org.junit.jupiter.api.BeforeEach;
@@ -69,7 +70,7 @@ class CommunityControllerTest {
         CommunityController controller = new CommunityController(service, Mappers.getMapper(CommunityRestMapper.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         client = WebTestClient.bindToController(controller)
-                .controllerAdvice(new GlobalErrorHandler(new SimpleMeterRegistry()))
+                .controllerAdvice(new GlobalErrorHandler(new TechnicalErrorCounter(new SimpleMeterRegistry())))
                 .argumentResolvers(configurer -> configurer.addCustomResolver(new HandlerMethodArgumentResolver() {
                     @Override
                     public boolean supportsParameter(MethodParameter parameter) {

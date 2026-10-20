@@ -1,5 +1,12 @@
 package com.calendar.social.infrastructure.messaging.adapters;
 
+import com.calendar.social.exception.TechnicalException;
+import com.calendar.social.exception.TechnicalErrorCode;
+import com.calendar.social.exception.BusinessException;
+import com.calendar.social.exception.BusinessErrorCode;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.calendar.social.exception.TechnicalErrorCounter;
+import com.calendar.social.exception.GlobalErrorHandler;
 import com.calendar.social.domain.models.UserCreatedEventDTO;
 import com.calendar.social.domain.models.UserDeletedEventDTO;
 import com.calendar.social.domain.models.UserModifiedEventDTO;
@@ -43,12 +50,15 @@ class UserEventsConsumerTest {
     @Mock
     private AccountErasureService accountErasureService;
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     private UserEventsConsumer consumer;
 
     @BeforeEach
     void setUp() {
+        TechnicalErrorCounter errorCounter = new TechnicalErrorCounter(meterRegistry);
         consumer = new UserEventsConsumer(relationshipService, accountErasureService,
-                new RecordReader(JsonMapper.builder().build()), MAX_RETRIES, Duration.ofMillis(1), Duration.ofMillis(5));
+                new RecordReader(JsonMapper.builder().build(), errorCounter), errorCounter,
+                MAX_RETRIES, Duration.ofMillis(1), Duration.ofMillis(5));
     }
 
     private static Message<byte[]> record(String json) {
@@ -122,6 +132,43 @@ class UserEventsConsumerTest {
 
         verify(relationshipService, times((int) MAX_RETRIES + 1)).writeUser(failingEvent);
         verify(relationshipService).writeUser(nextEvent);
+    }
+
+    @Test
+    void userCreated_shouldCountTheFailure_whenItsRetriesAreExhausted() {
+        when(relationshipService.writeUser(any()))
+                .thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.DATABASE_ERROR)));
+
+        StepVerifier.create(consumer.userCreated().apply(Flux.just(created("u1")))).expectComplete().verify(Duration.ofSeconds(10));
+
+        // Once per dropped record, not once per attempt.
+        assertThat(kafkaCount("SCL-TEC-001")).isEqualTo(1.0);
+    }
+
+    @Test
+    void userCreated_shouldNotCount_whenTheRecordIsRefused() {
+        when(relationshipService.writeUser(any()))
+                .thenReturn(Mono.error(new BusinessException(BusinessErrorCode.USER_DOES_NOT_EXIST)));
+
+        StepVerifier.create(consumer.userCreated().apply(Flux.just(created("u1")))).expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC).counters()).isEmpty();
+    }
+
+    @Test
+    void userDeleted_shouldCountTheFailure_whenItsRetriesAreExhausted() {
+        when(accountErasureService.erase(any())).thenReturn(Mono.error(new IllegalStateException("Neo4j unavailable")));
+
+        StepVerifier.create(consumer.userDeleted().apply(Flux.just(deleted("u1")))).expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(kafkaCount(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)).isEqualTo(1.0);
+    }
+
+    private double kafkaCount(String code) {
+        return meterRegistry.get(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                .tag(GlobalErrorHandler.CODE_TAG, code)
+                .tag(GlobalErrorHandler.SOURCE_TAG, GlobalErrorHandler.SOURCE_KAFKA)
+                .counter().count();
     }
 
     @Test

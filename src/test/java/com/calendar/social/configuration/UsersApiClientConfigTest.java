@@ -1,5 +1,6 @@
 package com.calendar.social.configuration;
 
+import com.calendar.social.exception.RequestIds;
 import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.timeout.ReadTimeoutException;
 import org.junit.jupiter.api.AfterEach;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import reactor.util.context.Context;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -33,6 +35,7 @@ class UsersApiClientConfigTest {
     private final UsersApiClientConfig config = new UsersApiClientConfig();
     private final AtomicReference<String> requestedPath = new AtomicReference<>();
     private final AtomicReference<String> secretHeader = new AtomicReference<>();
+    private final AtomicReference<String> requestIdHeader = new AtomicReference<>();
     private volatile long delayMillis = 0;
     private volatile int status = 200;
 
@@ -46,6 +49,7 @@ class UsersApiClientConfigTest {
         server.createContext("/", exchange -> {
             requestedPath.set(exchange.getRequestURI().getRawPath());
             secretHeader.set(exchange.getRequestHeaders().getFirst(UsersApiClientConfig.SECRET_HEADER));
+            requestIdHeader.set(exchange.getRequestHeaders().getFirst(RequestIds.REQUEST_ID_HEADER));
             try {
                 Thread.sleep(delayMillis);
             } catch (InterruptedException interrupted) {
@@ -83,6 +87,22 @@ class UsersApiClientConfigTest {
         StepVerifier.create(get(config.usersWebClient(url, ""))).expectNext(BODY).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(secretHeader).hasValue("");
+    }
+
+    @Test
+    void usersWebClient_shouldPassTheRequestIdOn_toWelyUsers() {
+        StepVerifier.create(get(config.usersWebClient(url, SECRET))
+                        .contextWrite(Context.of(RequestIds.REQUEST_ID_ATTRIBUTE, "abcd1234-from-gateway")))
+                .expectNext(BODY).expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(requestIdHeader).hasValue("abcd1234-from-gateway");
+    }
+
+    @Test
+    void usersWebClient_shouldSendNoRequestId_fromABackgroundCall() {
+        StepVerifier.create(get(config.usersWebClient(url, SECRET))).expectNext(BODY).expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(requestIdHeader.get()).isNull();
     }
 
     @Test

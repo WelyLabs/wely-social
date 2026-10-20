@@ -1,9 +1,14 @@
 package com.calendar.social.infrastructure.messaging.relay;
 
+import com.calendar.social.exception.GlobalErrorHandler;
+import com.calendar.social.exception.TechnicalErrorCode;
+import com.calendar.social.exception.TechnicalErrorCounter;
+import com.calendar.social.exception.TechnicalException;
 import com.calendar.social.infrastructure.messaging.adapters.KafkaFriendshipOutboxDispatcher;
 import com.calendar.social.infrastructure.messaging.adapters.UnpublishableRecordException;
 import com.calendar.social.infrastructure.persistence.adapters.Neo4jFriendshipOutboxAdapter;
 import com.calendar.social.infrastructure.persistence.models.entities.FriendshipOutboxEventEntity;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,7 +45,9 @@ class FriendshipOutboxRelayTest {
 
     private final Neo4jFriendshipOutboxAdapter outbox = mock(Neo4jFriendshipOutboxAdapter.class);
     private final KafkaFriendshipOutboxDispatcher dispatcher = mock(KafkaFriendshipOutboxDispatcher.class);
-    private final FriendshipOutboxRelay relay = new FriendshipOutboxRelay(outbox, dispatcher, POLL, 100,
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final FriendshipOutboxRelay relay = new FriendshipOutboxRelay(outbox, dispatcher,
+            new TechnicalErrorCounter(meterRegistry), POLL, 100,
             MAX_ATTEMPTS, MAX_BACKOFF, Duration.ofMillis(10), RETENTION, 500);
 
     private static FriendshipOutboxEventEntity record(long version, long attempts) {
@@ -93,6 +100,35 @@ class FriendshipOutboxRelayTest {
         verify(outbox).recordFailure(eq(2L), argThat(error -> error.contains("broker down")));
         verify(dispatcher, never()).dispatch(third);
         verify(outbox, never()).park(anyLong(), anyString());
+        assertThat(outboxCount(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)).isEqualTo(1.0);
+    }
+
+    @Test
+    void drainOnce_shouldCountAFailedSend_underItsCode() {
+        FriendshipOutboxEventEntity first = record(1, 0);
+        when(outbox.findPending(100)).thenReturn(Flux.just(first));
+        when(dispatcher.dispatch(first)).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.BROKER_UNAVAILABLE)));
+
+        StepVerifier.create(relay.drainOnce()).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(outboxCount("SCL-TEC-002")).isEqualTo(1.0);
+    }
+
+    @Test
+    void drainOnce_shouldNotCount_whenEveryRecordGoesOut() {
+        when(outbox.findPending(100)).thenReturn(Flux.just(record(1, 0)));
+        when(dispatcher.dispatch(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(relay.drainOnce()).expectNext(1L).expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC).counters()).isEmpty();
+    }
+
+    private double outboxCount(String code) {
+        return meterRegistry.get(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                .tag(GlobalErrorHandler.CODE_TAG, code)
+                .tag(GlobalErrorHandler.SOURCE_TAG, GlobalErrorHandler.SOURCE_OUTBOX)
+                .counter().count();
     }
 
     @Test
@@ -153,6 +189,8 @@ class FriendshipOutboxRelayTest {
         StepVerifier.create(relay.drainOnce()).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(dispatcher, never()).dispatch(next);
+        // The send that failed, then the park that failed.
+        assertThat(outboxCount(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)).isEqualTo(2.0);
     }
 
     @Test
@@ -189,6 +227,9 @@ class FriendshipOutboxRelayTest {
         when(outbox.recordFailure(anyLong(), anyString())).thenReturn(Mono.error(new IllegalStateException("graph down")));
 
         StepVerifier.create(relay.drainOnce()).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
+
+        // The send that failed, then the record of it that failed too.
+        assertThat(outboxCount(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)).isEqualTo(2.0);
     }
 
     @Test
@@ -273,6 +314,7 @@ class FriendshipOutboxRelayTest {
         } finally {
             relay.stop();
         }
+        assertThat(outboxCount(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)).isEqualTo(1.0);
     }
 
     @Test

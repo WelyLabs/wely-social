@@ -8,6 +8,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.ApplicationContext;
+import org.springframework.web.reactive.result.method.annotation.ResponseEntityExceptionHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -37,9 +39,9 @@ import static org.mockito.Mockito.when;
  * when Spring's own ones are also in the context, and what a failure outside any controller answers.
  * Unit tests binding only {@link GlobalErrorHandler} cannot see either.
  *
- * <p>Note: {@code @EnableWebFlux} on {@code WebConfig} switches Boot's WebFluxAutoConfiguration off,
- * so Boot's {@code ProblemDetailsExceptionHandler} advice is not in this context at all; these tests
- * pin the outcome whatever advices a later change brings in.
+ * <p>Boot's {@code ProblemDetailsExceptionHandler} is only registered with
+ * {@code spring.webflux.problemdetails.enabled}, which this service leaves unset; these tests pin the
+ * outcome whatever advices a later change brings in.
  */
 // Same context as OpenApiConfigTest: no Spring Cloud Stream binder, which would wait on an absent broker.
 @SpringBootTest(
@@ -62,6 +64,9 @@ class GlobalErrorHandlerWiringTest {
 
     @Autowired
     private MeterRegistry meterRegistry;
+
+    @Autowired
+    private ApplicationContext context;
 
     @Value("${local.server.port}")
     private int port;
@@ -130,6 +135,42 @@ class GlobalErrorHandlerWiringTest {
         expectOurProblem(client.put().uri(CLOSENESS).contentType(MediaType.APPLICATION_JSON).bodyValue("{}").exchange(),
                 400, GlobalErrorHandler.VALIDATION_FAILED_CODE)
                 .jsonPath("$.errors.closeness").exists();
+    }
+
+    @Test
+    @DisplayName("the gateway's request id is the problem's, and comes back in the response header")
+    void handle_shouldAnswerWithTheGatewayRequestId() {
+        String id = "abcd1234-5678-90ef-abcd-1234567890ef";
+
+        WebTestClient.ResponseSpec response = client.get().uri("/social-service/no-such-path")
+                .header(RequestIds.REQUEST_ID_HEADER, id)
+                .exchange();
+
+        response.expectHeader().valueEquals(RequestIds.REQUEST_ID_HEADER, id);
+        expectOurProblem(response, 404, GlobalErrorHandler.REQUEST_REFUSED_CODE)
+                .jsonPath("$.requestId").isEqualTo(id);
+    }
+
+    @Test
+    @DisplayName("a request id that does not look like one is replaced, not echoed")
+    void handle_shouldNotEchoAnInvalidRequestId() {
+        expectOurProblem(client.get().uri("/social-service/no-such-path")
+                        .header(RequestIds.REQUEST_ID_HEADER, "not an id!")
+                        .exchange(), 404, GlobalErrorHandler.REQUEST_REFUSED_CODE)
+                .jsonPath("$.requestId").value(requestId -> assertThat(requestId).isNotEqualTo("not an id!"));
+    }
+
+    @Test
+    @DisplayName("an unknown path answers 404 whatever the method, though Boot's static resource handler maps /**")
+    void handle_shouldAnswer404_whenAnUnknownPathIsCalledWithAnotherMethod() {
+        expectOurProblem(client.delete().uri("/social-service/no-such-path").exchange(),
+                404, GlobalErrorHandler.REQUEST_REFUSED_CODE);
+    }
+
+    @Test
+    @DisplayName("Boot's ProblemDetailsExceptionHandler stays out of the context: our advice is the only one answering")
+    void context_shouldHoldNoOtherProblemDetailsAdvice() {
+        assertThat(context.getBeansOfType(ResponseEntityExceptionHandler.class)).isEmpty();
     }
 
     @Test

@@ -3,12 +3,17 @@ package com.calendar.social.configuration;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.HandlerTypePredicate;
 import org.springframework.web.reactive.config.CorsRegistry;
-import org.springframework.web.reactive.config.EnableWebFlux;
 import org.springframework.web.reactive.config.PathMatchConfigurer;
 import org.springframework.web.reactive.config.WebFluxConfigurer;
 
+/**
+ * Adds the service prefix to this service's controllers.
+ *
+ * <p>Deliberately without {@code @EnableWebFlux}: that annotation switches Boot's WebFlux
+ * auto-configuration off as a whole, and every {@code spring.webflux.*} property with it (the
+ * multipart limit was silently 256 KB instead of 11 MB). Boot still applies this configurer.
+ */
 @Configuration
-@EnableWebFlux
 public class WebConfig implements WebFluxConfigurer {
 
     @Override

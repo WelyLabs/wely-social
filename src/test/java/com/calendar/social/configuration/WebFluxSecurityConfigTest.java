@@ -1,6 +1,8 @@
 package com.calendar.social.configuration;
 
 import com.calendar.social.exception.GlobalErrorHandler;
+import com.calendar.social.exception.RequestIds;
+import com.sun.net.httpserver.HttpServer;
 import com.calendar.social.exception.TechnicalErrorCode;
 import com.calendar.social.exception.TechnicalException;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +25,15 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
+import reactor.util.context.Context;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.concurrent.atomic.AtomicReference;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -109,6 +120,58 @@ class WebFluxSecurityConfigTest {
         ReflectionTestUtils.setField(config, "internalJwkSetUri", null);
 
         assertThat(catchThrowable(config::jwtDecoder)).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Keycloak is an external party: the key fetch never carries the request id")
+    void jwtDecoder_shouldNotSendTheRequestIdToKeycloak() throws IOException {
+        AtomicReference<Boolean> fetched = new AtomicReference<>(false);
+        AtomicReference<String> requestIdHeader = new AtomicReference<>();
+        HttpServer keycloak = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        keycloak.createContext("/", exchange -> {
+            fetched.set(true);
+            requestIdHeader.set(exchange.getRequestHeaders().getFirst(RequestIds.REQUEST_ID_HEADER));
+            byte[] keys = "{\"keys\":[]}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, keys.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(keys);
+            }
+        });
+        keycloak.start();
+        try {
+            ReflectionTestUtils.setField(config, "internalJwkSetUri",
+                    "http://127.0.0.1:" + keycloak.getAddress().getPort() + "/certs");
+            Base64.Encoder base64 = Base64.getUrlEncoder().withoutPadding();
+            String token = base64.encodeToString("{\"alg\":\"RS256\",\"kid\":\"k1\"}".getBytes(StandardCharsets.UTF_8))
+                    + "." + base64.encodeToString(("{\"sub\":\"u1\",\"iss\":\"" + PUBLIC_ISSUER + "\"}")
+                            .getBytes(StandardCharsets.UTF_8))
+                    + "." + base64.encodeToString("signature".getBytes(StandardCharsets.UTF_8));
+
+            StepVerifier.create(config.jwtDecoder().decode(token)
+                            .contextWrite(Context.of(RequestIds.REQUEST_ID_ATTRIBUTE, "abcd1234-from-gateway")))
+                    .expectError()
+                    .verify(Duration.ofSeconds(10));
+        } finally {
+            keycloak.stop(0);
+        }
+
+        assertThat(fetched).hasValue(true);
+        assertThat(requestIdHeader.get()).isNull();
+    }
+
+    @Test
+    @DisplayName("a 401 carries the gateway's request id")
+    void apiHttpSecurity_shouldAnswerWithTheGatewayRequestId() {
+        String id = "abcd1234-5678-90ef-abcd-1234567890ef";
+
+        client.get().uri("/social-service/relationships")
+                .header(RequestIds.REQUEST_ID_HEADER, id)
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectHeader().valueEquals(RequestIds.REQUEST_ID_HEADER, id)
+                .expectBody()
+                .jsonPath("$.requestId").isEqualTo(id);
     }
 
     @Test

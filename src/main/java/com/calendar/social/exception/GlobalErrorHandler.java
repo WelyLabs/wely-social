@@ -1,7 +1,5 @@
 package com.calendar.social.exception;
 
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -29,12 +27,12 @@ import java.util.Map;
  * to invent a fourth shape.
  *
  * <p>Three properties are added beyond the standard fields: {@code code}, the stable
- * identifier a client branches on, {@code timestamp}, and {@code requestId}, the WebFlux
- * request id that every log line written here carries too, so a response leads to its logs.
+ * identifier a client branches on, {@code timestamp}, and {@code requestId}, the gateway's request
+ * id ({@link RequestIds}) that every log line written here carries too, so a response leads to its logs.
  *
  * <p>Technical failures, the ones someone has to act on, are also counted in
- * {@value #TECHNICAL_ERRORS_METRIC} tagged by code ({@code wely_errors_technical_total} in
- * Prometheus).
+ * {@value #TECHNICAL_ERRORS_METRIC} tagged by code and source ({@code wely_errors_technical_total} in
+ * Prometheus), through {@link TechnicalErrorCounter}.
  *
  * <p>{@link #handle} applies the same mapping outside controllers: {@link ProblemWebExceptionHandler}
  * for failures raised in a web filter, {@link ProblemAuthenticationEntryPoint} and
@@ -63,13 +61,25 @@ public class GlobalErrorHandler {
 
     public static final String TECHNICAL_ERRORS_METRIC = "wely.errors.technical";
     public static final String CODE_TAG = "code";
-    /** The problem property carrying the WebFlux request id. */
+    /** Where the failure happened: one of the {@code SOURCE_*} values below. */
+    public static final String SOURCE_TAG = "source";
+    /** A request answered by this advice, the web exception handler or the security writers. */
+    public static final String SOURCE_HTTP = "http";
+    /** A Kafka consumer. */
+    public static final String SOURCE_KAFKA = "kafka";
+    /** The outbox relay and its dispatcher. */
+    public static final String SOURCE_OUTBOX = "outbox";
+    /** The deleted-users reconciliation loop. */
+    public static final String SOURCE_RECONCILIATION = "reconciliation";
+    /** A background job: the startup schema and snapshot tasks. */
+    public static final String SOURCE_JOB = "job";
+    /** The problem property carrying the request id. */
     public static final String REQUEST_ID_PROPERTY = "requestId";
 
-    private final MeterRegistry meterRegistry;
+    private final TechnicalErrorCounter counter;
 
-    public GlobalErrorHandler(MeterRegistry meterRegistry) {
-        this.meterRegistry = meterRegistry;
+    public GlobalErrorHandler(TechnicalErrorCounter counter) {
+        this.counter = counter;
     }
 
     /** The problem for any failure, as the matching handler below would answer it: log, count and all. */
@@ -103,7 +113,7 @@ public class GlobalErrorHandler {
         // The previous version logged these at WARN, which hid them.
         log.error("Technical failure {} on {} (request {})", error.getCode(), exchange.getRequest().getPath(),
                 requestId(exchange), ex);
-        countTechnicalFailure(error.getCode());
+        counter.count(ex, SOURCE_HTTP);
 
         return problem(error.getHttpStatus(), error.getCode(), error.getTitle(), error.getDetail(),
                 exchange);
@@ -162,7 +172,7 @@ public class GlobalErrorHandler {
     private ProblemDetail unexpected(Throwable ex, ServerWebExchange exchange) {
         log.error("Unhandled failure {} on {} (request {})", UNEXPECTED_FAILURE_CODE,
                 exchange.getRequest().getPath(), requestId(exchange), ex);
-        countTechnicalFailure(UNEXPECTED_FAILURE_CODE);
+        counter.count(ex, SOURCE_HTTP);
 
         return problem(HttpStatus.INTERNAL_SERVER_ERROR, UNEXPECTED_FAILURE_CODE,
                 "Unexpected error", "The request could not be completed.", exchange);
@@ -181,16 +191,7 @@ public class GlobalErrorHandler {
         return problem;
     }
 
-    /** The WebFlux request id: the same one that prefixes the framework's own log lines for this request. */
     private static String requestId(ServerWebExchange exchange) {
-        return exchange.getRequest().getId();
-    }
-
-    private void countTechnicalFailure(String code) {
-        Counter.builder(TECHNICAL_ERRORS_METRIC)
-                .description("Requests that failed on a dependency or an unexpected error, by error code")
-                .tag(CODE_TAG, code)
-                .register(meterRegistry)
-                .increment();
+        return RequestIds.of(exchange);
     }
 }

@@ -31,6 +31,8 @@ public class UsersApiClientConfig {
         return WebClient.builder()
                 .baseUrl(url)
                 .defaultHeader(SECRET_HEADER, secret)
+                // Both users and media are Wely services: the request id follows the call.
+                .filter(new RequestIdExchangeFilter())
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
     }

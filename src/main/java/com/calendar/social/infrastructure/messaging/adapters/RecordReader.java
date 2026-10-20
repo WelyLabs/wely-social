@@ -1,5 +1,7 @@
 package com.calendar.social.infrastructure.messaging.adapters;
 
+import com.calendar.social.exception.GlobalErrorHandler;
+import com.calendar.social.exception.TechnicalErrorCounter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.Message;
 import org.springframework.stereotype.Component;
@@ -13,9 +15,11 @@ import tools.jackson.databind.ObjectMapper;
 public class RecordReader {
 
     private final ObjectMapper objectMapper;
+    private final TechnicalErrorCounter errorCounter;
 
-    public RecordReader(ObjectMapper objectMapper) {
+    public RecordReader(ObjectMapper objectMapper, TechnicalErrorCounter errorCounter) {
         this.objectMapper = objectMapper;
+        this.errorCounter = errorCounter;
     }
 
     /** The record as {@code type}, ignoring unknown fields; empty, and logged without content, when unreadable. */
@@ -26,6 +30,8 @@ public class RecordReader {
                 .onErrorResume(error -> {
                     // The exception type only: a parser message can quote the record's values.
                     log.error("{} record unreadable, dropped ({})", topic, error.getClass().getSimpleName());
+                    // A broken producer contract, not a refused record: counted under SCL-TEC-000.
+                    errorCounter.count(error, GlobalErrorHandler.SOURCE_KAFKA);
                     return Mono.empty();
                 });
     }

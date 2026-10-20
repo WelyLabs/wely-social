@@ -1,5 +1,7 @@
 package com.calendar.social.infrastructure.persistence.schema;
 
+import com.calendar.social.exception.GlobalErrorHandler;
+import com.calendar.social.exception.TechnicalErrorCounter;
 import com.calendar.social.infrastructure.persistence.adapters.Neo4jFriendshipOutboxAdapter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,6 +28,7 @@ public class FriendshipSnapshotMigration implements SmartLifecycle {
     static final long ALREADY_DONE = -1;
 
     private final Neo4jFriendshipOutboxAdapter outbox;
+    private final TechnicalErrorCounter errorCounter;
     private final Duration firstBackoff;
     private final Duration maxBackoff;
 
@@ -33,9 +36,11 @@ public class FriendshipSnapshotMigration implements SmartLifecycle {
 
     public FriendshipSnapshotMigration(
             Neo4jFriendshipOutboxAdapter outbox,
+            TechnicalErrorCounter errorCounter,
             @Value("${app.neo4j.schema-init.first-backoff:1s}") Duration firstBackoff,
             @Value("${app.neo4j.schema-init.max-backoff:5m}") Duration maxBackoff) {
         this.outbox = outbox;
+        this.errorCounter = errorCounter;
         this.firstBackoff = firstBackoff;
         this.maxBackoff = maxBackoff;
     }
@@ -48,8 +53,10 @@ public class FriendshipSnapshotMigration implements SmartLifecycle {
                 .defaultIfEmpty(ALREADY_DONE)
                 .retryWhen(Retry.backoff(Long.MAX_VALUE, firstBackoff)
                         .maxBackoff(maxBackoff)
-                        .doBeforeRetry(signal -> log.warn("Friendship snapshot not enqueued yet, retrying: {}",
-                                signal.failure().getMessage())))
+                        .doBeforeRetry(signal -> {
+                            log.warn("Friendship snapshot not enqueued yet, retrying: {}", signal.failure().getMessage());
+                            errorCounter.count(signal.failure(), GlobalErrorHandler.SOURCE_JOB);
+                        }))
                 .subscribe(
                         count -> {
                             if (count == ALREADY_DONE) {
@@ -58,7 +65,10 @@ public class FriendshipSnapshotMigration implements SmartLifecycle {
                                 log.info("Friendship snapshot enqueued: {} accepted pair(s)", count);
                             }
                         },
-                        error -> log.error("Friendship snapshot could not be enqueued", error));
+                        error -> {
+                            log.error("Friendship snapshot could not be enqueued", error);
+                            errorCounter.count(error, GlobalErrorHandler.SOURCE_JOB);
+                        });
     }
 
     @Override

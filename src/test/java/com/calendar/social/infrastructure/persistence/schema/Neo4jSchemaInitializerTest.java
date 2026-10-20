@@ -1,5 +1,8 @@
 package com.calendar.social.infrastructure.persistence.schema;
 
+import com.calendar.social.exception.GlobalErrorHandler;
+import com.calendar.social.exception.TechnicalErrorCounter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.neo4j.driver.summary.ResultSummary;
@@ -23,9 +26,11 @@ class Neo4jSchemaInitializerTest {
 
     private final ReactiveNeo4jClient client = mock(ReactiveNeo4jClient.class);
     private final ResultSummary summary = mock(ResultSummary.class);
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     private Neo4jSchemaInitializer initializer(Duration firstBackoff) {
-        return new Neo4jSchemaInitializer(client, firstBackoff, firstBackoff.multipliedBy(2));
+        return new Neo4jSchemaInitializer(client, new TechnicalErrorCounter(meterRegistry), firstBackoff,
+                firstBackoff.multipliedBy(2));
     }
 
     private ReactiveNeo4jClient.UnboundRunnableSpec stub(String statement, Mono<ResultSummary> result) {
@@ -99,6 +104,27 @@ class Neo4jSchemaInitializerTest {
         try {
             await().atMost(Duration.ofSeconds(2)).untilAsserted(() ->
                     assertThat(attempts).hasValue(3));
+        } finally {
+            initializer.stop();
+        }
+    }
+
+    @Test
+    void start_shouldCountEachFailedAttempt() {
+        AtomicInteger attempts = new AtomicInteger();
+        stubAll(Mono.just(summary));
+        // Straight from the driver, not through an adapter: no TechnicalException, so SCL-TEC-000.
+        stub(Neo4jSchemaInitializer.DELETED_USER_CONSTRAINT, Mono.defer(() ->
+                attempts.incrementAndGet() < 3 ? Mono.error(new IllegalStateException("Neo4j starting")) : Mono.just(summary)));
+        Neo4jSchemaInitializer initializer = initializer(Duration.ofMillis(1));
+
+        initializer.start();
+        try {
+            await().atMost(Duration.ofSeconds(2)).untilAsserted(() ->
+                    assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                            .tag(GlobalErrorHandler.CODE_TAG, GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)
+                            .tag(GlobalErrorHandler.SOURCE_TAG, GlobalErrorHandler.SOURCE_JOB)
+                            .counters().stream().mapToDouble(counter -> counter.count()).sum()).isEqualTo(2.0));
         } finally {
             initializer.stop();
         }

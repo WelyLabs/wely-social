@@ -1,5 +1,7 @@
 package com.calendar.social.infrastructure.persistence.schema;
 
+import com.calendar.social.exception.GlobalErrorHandler;
+import com.calendar.social.exception.TechnicalErrorCounter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -42,6 +44,7 @@ public class Neo4jSchemaInitializer implements SmartLifecycle {
             MIGRATION_CONSTRAINT);
 
     private final ReactiveNeo4jClient client;
+    private final TechnicalErrorCounter errorCounter;
     private final Duration firstBackoff;
     private final Duration maxBackoff;
 
@@ -49,9 +52,11 @@ public class Neo4jSchemaInitializer implements SmartLifecycle {
 
     public Neo4jSchemaInitializer(
             ReactiveNeo4jClient client,
+            TechnicalErrorCounter errorCounter,
             @Value("${app.neo4j.schema-init.first-backoff:1s}") Duration firstBackoff,
             @Value("${app.neo4j.schema-init.max-backoff:5m}") Duration maxBackoff) {
         this.client = client;
+        this.errorCounter = errorCounter;
         this.firstBackoff = firstBackoff;
         this.maxBackoff = maxBackoff;
     }
@@ -62,12 +67,16 @@ public class Neo4jSchemaInitializer implements SmartLifecycle {
         task = ensureSchema()
                 .retryWhen(Retry.backoff(Long.MAX_VALUE, firstBackoff)
                         .maxBackoff(maxBackoff)
-                        .doBeforeRetry(signal -> log.warn(
-                                "Neo4j constraints not ensured yet, retrying: {}",
-                                signal.failure().getMessage())))
+                        .doBeforeRetry(signal -> {
+                            log.warn("Neo4j constraints not ensured yet, retrying: {}", signal.failure().getMessage());
+                            errorCounter.count(signal.failure(), GlobalErrorHandler.SOURCE_JOB);
+                        }))
                 .subscribe(
                         count -> log.info("Neo4j constraints and indexes ensured ({})", count),
-                        error -> log.error("Neo4j constraints could not be ensured", error));
+                        error -> {
+                            log.error("Neo4j constraints could not be ensured", error);
+                            errorCounter.count(error, GlobalErrorHandler.SOURCE_JOB);
+                        });
     }
 
     @Override

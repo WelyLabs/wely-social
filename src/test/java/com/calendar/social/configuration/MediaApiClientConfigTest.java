@@ -1,10 +1,12 @@
 package com.calendar.social.configuration;
 
+import com.calendar.social.exception.RequestIds;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
+import reactor.util.context.Context;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -19,6 +21,7 @@ class MediaApiClientConfigTest {
     private final MediaApiClientConfig config = new MediaApiClientConfig();
     private final AtomicReference<String> requestedPath = new AtomicReference<>();
     private final AtomicReference<String> secretHeader = new AtomicReference<>();
+    private final AtomicReference<String> requestIdHeader = new AtomicReference<>();
 
     private HttpServer server;
     private String url;
@@ -29,6 +32,7 @@ class MediaApiClientConfigTest {
         server.createContext("/", exchange -> {
             requestedPath.set(exchange.getRequestURI().getRawPath());
             secretHeader.set(exchange.getRequestHeaders().getFirst(UsersApiClientConfig.SECRET_HEADER));
+            requestIdHeader.set(exchange.getRequestHeaders().getFirst(RequestIds.REQUEST_ID_HEADER));
             exchange.sendResponseHeaders(204, -1);
             exchange.close();
         });
@@ -50,6 +54,17 @@ class MediaApiClientConfigTest {
 
         assertThat(requestedPath).hasValue("/internal/media");
         assertThat(secretHeader).hasValue("social-secret");
+    }
+
+    @Test
+    void mediaWebClient_shouldPassTheRequestIdOn_toWelyMedia() {
+        StepVerifier.create(config.mediaWebClient(url, "social-secret").delete().uri("/internal/media")
+                        .retrieve().toBodilessEntity()
+                        .contextWrite(Context.of(RequestIds.REQUEST_ID_ATTRIBUTE, "abcd1234-from-gateway")))
+                .expectNextCount(1)
+                .expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(requestIdHeader).hasValue("abcd1234-from-gateway");
     }
 
     @Test
