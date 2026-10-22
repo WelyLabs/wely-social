@@ -1,6 +1,7 @@
 package com.calendar.social.infrastructure.persistence.adapters;
 
 import com.calendar.social.domain.models.FriendRequest;
+import com.calendar.social.domain.models.FriendOfFriend;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.Person;
@@ -132,6 +133,11 @@ public class Neo4jRelationshipRepositoryAdapter implements RelationshipRepositor
     @Override
     public Flux<FriendSummary> findFriendSummaries(String userId) {
         return userNodeRepository.findFriendSummaries(userId).map(friendshipMapper::toFriendSummary);
+    }
+
+    @Override
+    public Flux<FriendOfFriend> findFriendsOf(String ownerId, String viewerId) {
+        return userNodeRepository.findFriendsOf(ownerId, viewerId).map(friendshipMapper::toFriendOfFriend);
     }
 
     @Override

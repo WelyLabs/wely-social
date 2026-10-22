@@ -3,6 +3,7 @@ package com.calendar.social.application.rest;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.calendar.social.application.rest.mappers.FriendshipRestMapper;
 import com.calendar.social.domain.models.Closeness;
+import com.calendar.social.domain.models.FriendOfFriend;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.services.RelationshipService;
@@ -63,6 +64,20 @@ class FriendshipControllerTest {
                     }
                 }))
                 .build();
+    }
+
+    @Test
+    void listFriendsOfFriend_shouldAnswerTheCircleWithoutAnyCloseness() {
+        when(relationshipService.listFriendsOf("alice", "bob"))
+                .thenReturn(Flux.just(new FriendOfFriend("carol", "carol", 3333, null)));
+
+        client.get().uri("/relationships/bob/friends").exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$[0].userId").isEqualTo("carol")
+                .jsonPath("$[0].userName").isEqualTo("carol")
+                .jsonPath("$[0].hashtag").isEqualTo(3333)
+                .jsonPath("$[0].closeness").doesNotExist();
     }
 
     @Test

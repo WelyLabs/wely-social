@@ -1,6 +1,7 @@
 package com.calendar.social.infrastructure.persistence.repositories;
 
 import com.calendar.social.infrastructure.persistence.models.dtos.FriendRequestDBDTO;
+import com.calendar.social.infrastructure.persistence.models.dtos.FriendOfFriendDBDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.FriendSummaryDBDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.FriendshipDBDTO;
 import com.calendar.social.infrastructure.persistence.models.dtos.PersonDBDTO;
@@ -135,6 +136,19 @@ public interface UserNodeRepository extends ReactiveNeo4jRepository<UserNodeEnti
             + "       coalesce(r.proposedBy = other.userId, false) AS proposedByFriend "
             + "ORDER BY userName ASC")
     Flux<FriendSummaryDBDTO> findFriendSummaries(String myId);
+
+    /**
+     * The owner's accepted friendships, the viewer left out. No closeness is returned: how close the
+     * owner is to each of them is theirs, and the caller has no business reading it.
+     */
+    @Query("MATCH (owner:User {userId: $ownerId})-[:RELATIONSHIP {status: 'ACCEPTED'}]-(other:User) "
+            + "WHERE other.userId <> $viewerId "
+            + "RETURN DISTINCT other.userId AS userId, "
+            + "       other.userName AS userName, "
+            + "       other.hashtag AS hashtag, "
+            + "       other.profilePicUrl AS profilePicUrl "
+            + "ORDER BY userName ASC")
+    Flux<FriendOfFriendDBDTO> findFriendsOf(String ownerId, String viewerId);
 
     /**
      * Optimistic update: matches only if the version is still the one the decision was made on.

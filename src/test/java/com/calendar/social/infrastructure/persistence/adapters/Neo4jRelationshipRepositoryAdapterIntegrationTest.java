@@ -1,6 +1,7 @@
 package com.calendar.social.infrastructure.persistence.adapters;
 
 import com.calendar.social.domain.models.Closeness;
+import com.calendar.social.domain.models.FriendOfFriend;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.Person;
@@ -501,6 +502,34 @@ class Neo4jRelationshipRepositoryAdapterIntegrationTest {
 
         assertThat(adapter.findFriendSummaries(ALICE).collectList().block())
                 .containsExactly(new FriendSummary(BOB, "bob", 2222, null, Closeness.CLOSE, null, false));
+    }
+
+    @Test
+    @DisplayName("a friend's circle lists their accepted friends, the viewer left out")
+    void findFriendsOf_shouldListTheOwnersFriendsWithoutTheViewer() {
+        // alice and carol are both bob's friends; alice asks who bob knows.
+        friends(ALICE, BOB, "bob", 2222);
+        friends(BOB, "carol", "carol", 3333);
+
+        assertThat(adapter.findFriendsOf(BOB, ALICE).collectList().block())
+                .containsExactly(new FriendOfFriend("carol", "carol", 3333, null));
+    }
+
+    @Test
+    @DisplayName("a friend's circle leaves out a request they have not accepted")
+    void findFriendsOf_shouldIgnorePendingRequests() {
+        friends(ALICE, BOB, "bob", 2222);
+        adapter.sendFriendRequest(BOB, "dave", 4444, null).block();
+
+        assertThat(adapter.findFriendsOf(BOB, ALICE).collectList().block()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a circle is empty rather than absent for someone with no friends")
+    void findFriendsOf_shouldBeEmptyForALonelyOwner() {
+        friends(ALICE, BOB, "bob", 2222);
+
+        assertThat(adapter.findFriendsOf(BOB, ALICE).collectList().block()).isEmpty();
     }
 
     @Test

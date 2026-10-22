@@ -3,6 +3,7 @@ package com.calendar.social.application.rest;
 import com.calendar.social.application.rest.dtos.ClosenessRequestDTO;
 import com.calendar.social.application.rest.dtos.FriendshipResponseDTO;
 import com.calendar.social.application.rest.mappers.FriendshipRestMapper;
+import com.calendar.social.domain.models.FriendOfFriend;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.services.RelationshipService;
 import jakarta.validation.Valid;
@@ -40,6 +41,16 @@ public class FriendshipController {
     @GetMapping
     public Flux<FriendSummary> listFriendships(@AuthenticationPrincipal Jwt jwt) {
         return relationshipService.listFriendships(jwt.getClaimAsString(BUSINESS_ID));
+    }
+
+    /**
+     * Who this friend is friends with, for a CLOSE or INTIMATE friend of theirs: 404 SCL-BUS-007
+     * when they are not friends, 403 SCL-BUS-022 when not close enough. No closeness is returned --
+     * how close two other people are is theirs, not the caller's to read.
+     */
+    @GetMapping("{friendId}/friends")
+    public Flux<FriendOfFriend> listFriendsOfFriend(@AuthenticationPrincipal Jwt jwt, @PathVariable String friendId) {
+        return relationshipService.listFriendsOf(jwt.getClaimAsString(BUSINESS_ID), friendId);
     }
 
     /** Also what wely-events asks to know how much of a friend's calendar the caller may see. */

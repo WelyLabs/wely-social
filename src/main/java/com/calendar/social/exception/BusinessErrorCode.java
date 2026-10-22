@@ -138,6 +138,13 @@ public enum BusinessErrorCode {
             "The community picture must be a JPEG, PNG, GIF or BMP image.",
             HttpStatus.BAD_REQUEST),
 
+    /** Reading a friend's circle asks for more than friendship: CLOSE at least, as they granted it. */
+    NOT_CLOSE_ENOUGH(
+            "SCL-BUS-022",
+            "Not close enough",
+            "Only a close friend can see who this person is friends with.",
+            HttpStatus.FORBIDDEN),
+
     COMMUNITY_PICTURE_TOO_LARGE(
             "SCL-BUS-021",
             "Picture too large",

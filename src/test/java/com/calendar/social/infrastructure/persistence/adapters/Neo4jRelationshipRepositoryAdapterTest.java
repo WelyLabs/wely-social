@@ -25,6 +25,8 @@ import com.calendar.social.infrastructure.persistence.repositories.UserNodeRepos
 import com.calendar.social.infrastructure.persistence.models.dtos.FriendRequestDBDTO;
 import com.calendar.social.domain.models.FriendRequest;
 import org.junit.jupiter.api.BeforeEach;
+import com.calendar.social.domain.models.FriendOfFriend;
+import com.calendar.social.infrastructure.persistence.models.dtos.FriendOfFriendDBDTO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -360,5 +362,16 @@ class Neo4jRelationshipRepositoryAdapterTest {
         when(userNodeMapper.toUserNode(carol)).thenReturn(carolDto);
 
         StepVerifier.create(adapter.findMutualFriends("alice", "bob", 50)).expectNext(carolDto).expectComplete().verify(Duration.ofSeconds(10));
+    }
+
+    @Test
+    void findFriendsOf_shouldMapWhatTheGraphAnswers() {
+        FriendOfFriendDBDTO row = new FriendOfFriendDBDTO("carol", "carol", 3333, null);
+        when(userNodeRepository.findFriendsOf("bob", "alice")).thenReturn(Flux.just(row));
+        when(friendshipMapper.toFriendOfFriend(row)).thenReturn(new FriendOfFriend("carol", "carol", 3333, null));
+
+        StepVerifier.create(adapter.findFriendsOf("bob", "alice"))
+                .expectNext(new FriendOfFriend("carol", "carol", 3333, null))
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 }

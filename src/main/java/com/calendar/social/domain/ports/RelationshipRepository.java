@@ -1,6 +1,7 @@
 package com.calendar.social.domain.ports;
 
 import com.calendar.social.domain.models.FriendRequest;
+import com.calendar.social.domain.models.FriendOfFriend;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.Person;
@@ -46,6 +47,9 @@ public interface RelationshipRepository {
     Mono<Friendship> findFriendship(String userId, String friendId);
 
     Flux<FriendSummary> findFriendSummaries(String userId);
+
+    /** The friends of {@code ownerId}, the viewer left out of their own answer. */
+    Flux<FriendOfFriend> findFriendsOf(String ownerId, String viewerId);
 
     /**
      * Writes the closeness of {@code changed}, provided nobody changed the friendship since

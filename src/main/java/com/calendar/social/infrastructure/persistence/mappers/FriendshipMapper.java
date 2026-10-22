@@ -1,5 +1,7 @@
 package com.calendar.social.infrastructure.persistence.mappers;
 
+import com.calendar.social.domain.models.FriendOfFriend;
+import com.calendar.social.infrastructure.persistence.models.dtos.FriendOfFriendDBDTO;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.infrastructure.persistence.models.dtos.FriendSummaryDBDTO;
@@ -12,4 +14,6 @@ public interface FriendshipMapper {
     Friendship toFriendship(FriendshipDBDTO friendship);
 
     FriendSummary toFriendSummary(FriendSummaryDBDTO summary);
+
+    FriendOfFriend toFriendOfFriend(FriendOfFriendDBDTO friend);
 }

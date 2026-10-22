@@ -1,6 +1,7 @@
 package com.calendar.social.domain.services;
 
 import com.calendar.social.domain.models.Closeness;
+import com.calendar.social.domain.models.FriendOfFriend;
 import com.calendar.social.domain.models.FriendSummary;
 import com.calendar.social.domain.models.Friendship;
 import com.calendar.social.domain.models.FriendshipEvent;
@@ -126,6 +127,26 @@ public class RelationshipService {
 
     public Flux<FriendSummary> listFriendships(String userId) {
         return relationshipRepository.findFriendSummaries(userId);
+    }
+
+    /**
+     * Who a friend is friends with, for a CLOSE or INTIMATE friend of theirs -- enough to put a guest
+     * list together for their surprise, which is what this exists for.
+     *
+     * <p>Deliberately narrow: no closeness is returned, so the viewer learns who the circle is and
+     * not how close each of them is, and a plain FRIEND is refused. The owner granted closeness, not
+     * their address book, so widening this is a product decision rather than a patch.
+     */
+    public Flux<FriendOfFriend> listFriendsOf(String viewerId, String ownerId) {
+        if (viewerId.equals(ownerId)) {
+            return relationshipRepository.findFriendsOf(ownerId, viewerId);
+        }
+        return relationshipRepository.findFriendship(viewerId, ownerId)
+                .switchIfEmpty(Mono.error(() -> new BusinessException(BusinessErrorCode.NOT_FRIENDS)))
+                .filter(friendship -> friendship.closeness() != null
+                        && friendship.closeness().compareTo(Closeness.CLOSE) >= 0)
+                .switchIfEmpty(Mono.error(() -> new BusinessException(BusinessErrorCode.NOT_CLOSE_ENOUGH)))
+                .flatMapMany(friendship -> relationshipRepository.findFriendsOf(ownerId, viewerId));
     }
 
     public Mono<Friendship> requestCloseness(String userId, String friendId, Closeness target) {

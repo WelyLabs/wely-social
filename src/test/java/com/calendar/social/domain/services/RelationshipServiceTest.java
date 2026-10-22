@@ -382,6 +382,58 @@ class RelationshipServiceTest {
     }
 
     @Test
+    void listFriendsOf_shouldAnswerTheCircleToACloseFriend() {
+        FriendOfFriend carol = new FriendOfFriend("carol", "carol", 3333, null);
+        when(relationshipRepository.findFriendship("alice", "bob"))
+                .thenReturn(Mono.just(new Friendship("bob", Closeness.CLOSE, null, false, 1, null)));
+        when(relationshipRepository.findFriendsOf("bob", "alice")).thenReturn(Flux.just(carol));
+
+        StepVerifier.create(relationshipService.listFriendsOf("alice", "bob"))
+                .expectNext(carol)
+                .expectComplete().verify(Duration.ofSeconds(10));
+    }
+
+    @Test
+    void listFriendsOf_shouldAnswerTheCircleToAnIntimateFriend() {
+        when(relationshipRepository.findFriendship("alice", "bob"))
+                .thenReturn(Mono.just(new Friendship("bob", Closeness.INTIMATE, null, false, 1, null)));
+        when(relationshipRepository.findFriendsOf("bob", "alice")).thenReturn(Flux.empty());
+
+        StepVerifier.create(relationshipService.listFriendsOf("alice", "bob"))
+                .expectComplete().verify(Duration.ofSeconds(10));
+    }
+
+    @Test
+    void listFriendsOf_shouldRefuseAPlainFriend() {
+        when(relationshipRepository.findFriendship("alice", "bob"))
+                .thenReturn(Mono.just(new Friendship("bob", Closeness.FRIEND, null, false, 1, null)));
+
+        StepVerifier.create(relationshipService.listFriendsOf("alice", "bob"))
+                .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.NOT_CLOSE_ENOUGH)
+                .verify(Duration.ofSeconds(10));
+        verify(relationshipRepository, never()).findFriendsOf(anyString(), anyString());
+    }
+
+    @Test
+    void listFriendsOf_shouldRefuseAStranger() {
+        when(relationshipRepository.findFriendship("alice", "carol")).thenReturn(Mono.empty());
+
+        StepVerifier.create(relationshipService.listFriendsOf("alice", "carol"))
+                .expectErrorMatches(e -> codeOf(e) == BusinessErrorCode.NOT_FRIENDS)
+                .verify(Duration.ofSeconds(10));
+        verify(relationshipRepository, never()).findFriendsOf(anyString(), anyString());
+    }
+
+    @Test
+    void listFriendsOf_shouldLetSomeoneReadTheirOwnCircleWithoutACheck() {
+        when(relationshipRepository.findFriendsOf("alice", "alice")).thenReturn(Flux.empty());
+
+        StepVerifier.create(relationshipService.listFriendsOf("alice", "alice"))
+                .expectComplete().verify(Duration.ofSeconds(10));
+        verify(relationshipRepository, never()).findFriendship(anyString(), anyString());
+    }
+
+    @Test
     void requestCloseness_shouldWriteTheProposalAgainstTheVersionItWasDecidedOn() {
         Friendship proposal = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, false, 4, null);
         Friendship written = new Friendship("bob", Closeness.FRIEND, Closeness.CLOSE, false, 5, null);
