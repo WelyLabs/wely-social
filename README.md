@@ -1,8 +1,14 @@
 # wely-social
 
+> **Topic names carry their environment as a prefix** (`dev.`, `prod.`) since 2026-10-24: one
+> broker serves every environment and the prefix is all that separates them. A single variable
+> carries it — `TOPIC_PREFIX` — and destinations read `${TOPIC_PREFIX}user-created`. No default
+> anywhere: a service that cannot name its topics refuses to start rather than joining another
+> environment's traffic.
+
 Service du **graphe social** de la plateforme [Wely Calendar](https://github.com/WelyLabs/wely-platform) : demandes d'amis, amitiés, statuts relationnels.
 
-It is the only service with graph persistence, and it consumes the `USER_CREATED`, `USER_MODIFIED` and `USER_DELETED` events produced by `wely-users`. It produces `FRIENDSHIP_CHANGED`, through a transactional outbox, for wely-notifications and for wely-events' friendship projection.
+It is the only service with graph persistence, and it consumes the `<env>.user-created`, `<env>.user-modified` and `<env>.user-deleted` events produced by `wely-users`. It produces `FRIENDSHIP_CHANGED`, through a transactional outbox, for wely-notifications and for wely-events' friendship projection.
 
 ---
 
@@ -13,7 +19,7 @@ It is the only service with graph persistence, and it consumes the `USER_CREATED
 | **Port** | 8083 |
 | **Préfixe** | `/social-service` (exposé via la gateway sur `/api/v1/social-service/**`) |
 | **Base** | Neo4j (driver réactif) |
-| **Consumes** | `USER_CREATED`, `USER_MODIFIED` and `USER_DELETED` on Kafka |
+| **Consumes** | `<env>.user-created`, `<env>.user-modified` and `<env>.user-deleted` on Kafka |
 | **Produit** | `FRIENDSHIP_CHANGED` sur Kafka |
 
 ---
@@ -87,7 +93,7 @@ Communities hang off the user nodes through two edges, queried with explicit Cyp
 
 A deleted account leaves only a `(:DeletedUser {userId, deletedAt, erasedAt})` node, outside the `:User` label, so no user query ever sees it. It holds only the `businessId` (the pseudonym the other services keep too) and two timestamps. A uniqueness constraint `deleted_user_id` on `userId` is created at startup (`Neo4jSchemaInitializer`, in the background, retried until Neo4j answers).
 
-The marker prevents **resurrection**: the `USER_CREATED` and `USER_MODIFIED` upsert starts with `OPTIONAL MATCH (d:DeletedUser {userId: $userId}) WITH d WHERE d IS NULL`, so it never recreates a deleted account's node, even when Kafka delivers those events after `USER_DELETED` (three topics, no ordering between them).
+The marker prevents **resurrection**: the `<env>.user-created` and `<env>.user-modified` upsert starts with `OPTIONAL MATCH (d:DeletedUser {userId: $userId}) WITH d WHERE d IS NULL`, so it never recreates a deleted account's node, even when Kafka delivers those events after `<env>.user-deleted` (three topics, no ordering between them).
 
 ### Niveau de proximité
 
@@ -124,7 +130,7 @@ Architecture hexagonale, un seul port (`RelationshipRepository`), un adaptateur 
                                       │
   Kafka          ┌────────────────────▼───────────────────┐
   ──────────────▶│               domain/                  │
-  USER_CREATED   │   services/ RelationshipService (POJO) │
+  <env>.user-created   │   services/ RelationshipService (POJO) │
                  │   models/   UserResult (sealed)        │
                  │             ├─ UserNodeDTO             │
                  │             └─ UserSocialDTO           │
@@ -199,7 +205,7 @@ On n'ajoute pas un ami par UUID mais par son tag public `Pseudo#1234` — l'UUID
 
 The three consumers (`UserEventsConsumer`) are `Function<Flux<Message<byte[]>>, Mono<Void>>`: the framework subscribes to the stream, never the code. Each record is read from its bytes (`RecordReader`, unknown fields ignored), retried 5 times with a backoff from 1 s capped at 30 s, then logged and skipped, so one failure never ends the stream. An unreadable record, or one without `userId`, is skipped without logging its content.
 
-**Topic** `USER_CREATED` · groupe `social-service-group`
+**Topic** `<env>.user-created` · groupe `social-service-group`
 
 ```json
 { "userId": "…", "userName": "theo", "hashtag": 4271, "profilePicUrl": null }
@@ -207,15 +213,15 @@ The three consumers (`UserEventsConsumer`) are `Function<Flux<Message<byte[]>>, 
 
 À réception, le service crée le nœud `(:User)` correspondant. C'est ce qui maintient le graphe cohérent avec PostgreSQL sans que `wely-users` ait à connaître ce service.
 
-**Topic** `USER_MODIFIED` · group `social-service-group`
+**Topic** `<env>.user-modified` · group `social-service-group`
 
 ```json
 { "userId": "…", "userName": "theo", "hashtag": 4271, "firstName": "…", "lastName": "…", "profilePicUrl": null }
 ```
 
-The whole profile after an edit, applied by the same upsert; it recreates a node that `USER_CREATED` never made. First and last names are not stored in the graph.
+The whole profile after an edit, applied by the same upsert; it recreates a node that `<env>.user-created` never made. First and last names are not stored in the graph.
 
-**Topic** `USER_DELETED` · group `social-service-group` · `start-offset=earliest`
+**Topic** `<env>.user-deleted` · group `social-service-group` · `start-offset=earliest`
 
 ```json
 { "userId": "…", "deletedAt": "2026-10-15T14:03:27.123Z" }
@@ -234,13 +240,13 @@ The erasure (`AccountErasureService`) runs in **one Neo4j transaction**:
 
 Eligible means neither an already-deleted account nor a demo account (`ACCOUNT_DELETION_PROTECTED_USER_IDS`). The same rule decides whether other admins remain, so neither an erasure nor a live `leave` leaves a demo account as a community's only admin.
 
-Every step is idempotent: a replayed `USER_DELETED` changes nothing. `createdBy` stays on surviving communities, as a pseudonym that is never exposed. Each former friendship gets a `REMOVED` record in the same transaction, without `fromUserName` (see [Produced events](#produced-events)); a replay finds no friendship left and records nothing. Friends are not notified: the person simply disappears from their lists.
+Every step is idempotent: a replayed `<env>.user-deleted` changes nothing. `createdBy` stays on surviving communities, as a pseudonym that is never exposed. Each former friendship gets a `REMOVED` record in the same transaction, without `fromUserName` (see [Produced events](#produced-events)); a replay finds no friendship left and records nothing. Friends are not notified: the person simply disappears from their lists.
 
 Once the node is deleted, a still-valid token can no longer write anything on the user's behalf: every write (requests, acceptances, community creation, joining, invitations) `MATCH`es the user's node.
 
 ### Reconciliation
 
-Kafka is not the only path to an erasure. `DeletedUsersReconciliationLoop` pages wely-users' tombstones (`GET /user-service/internal/deleted-users`, 500 per page, header `X-Internal-Secret` from `DELETED_USERS_READER_SECRET`), on the wely-users Service directly: the gateway answers 404 for `/api/v1/*/internal/**`. The first pass runs 1 min after startup; the next one 24 h after a clean pass, or 1 h after a pass that failed or counted a failed erasure. A pass reads the next page only once the current one is reconciled, so a failed read never cuts an erasure short; a pass still running after 24 h (a hung query) is cut and retried 1 h later. Each pass runs the same idempotent erasure (`AccountReconciliationService`) for every tombstone whose marker is missing or has no `erasedAt`, and for every tombstone deleted less than 48 h ago, even if erased, which sweeps a write made meanwhile by a still-valid token. This repairs a `USER_DELETED` lost by a crash, skipped after its retries, or expired from the topic before it was read. Each pass logs one INFO line with its counts, and a failed erasure logs only the `businessId`. With a blank `USERS_API_URL` or `DELETED_USERS_READER_SECRET`, every pass fails without any call and the service runs on; `ACCOUNT_ERASURE_RECONCILIATION_ENABLED=false` turns the loop off.
+Kafka is not the only path to an erasure. `DeletedUsersReconciliationLoop` pages wely-users' tombstones (`GET /user-service/internal/deleted-users`, 500 per page, header `X-Internal-Secret` from `DELETED_USERS_READER_SECRET`), on the wely-users Service directly: the gateway answers 404 for `/api/v1/*/internal/**`. The first pass runs 1 min after startup; the next one 24 h after a clean pass, or 1 h after a pass that failed or counted a failed erasure. A pass reads the next page only once the current one is reconciled, so a failed read never cuts an erasure short; a pass still running after 24 h (a hung query) is cut and retried 1 h later. Each pass runs the same idempotent erasure (`AccountReconciliationService`) for every tombstone whose marker is missing or has no `erasedAt`, and for every tombstone deleted less than 48 h ago, even if erased, which sweeps a write made meanwhile by a still-valid token. This repairs a `<env>.user-deleted` lost by a crash, skipped after its retries, or expired from the topic before it was read. Each pass logs one INFO line with its counts, and a failed erasure logs only the `businessId`. With a blank `USERS_API_URL` or `DELETED_USERS_READER_SECRET`, every pass fails without any call and the service runs on; `ACCOUNT_ERASURE_RECONCILIATION_ENABLED=false` turns the loop off.
 
 ## Produced events
 
@@ -408,7 +414,7 @@ kubectl apply -k overlays/local --server-side
 ## Limites connues
 
 - **La liste d'utilisateurs n'est pas paginée.** `MATCH (other:User)` parcourt tous les nœuds, sans `SKIP`/`LIMIT` ni filtre serveur — le filtrage est fait côté client. À remplacer par une recherche paramétrée, paginée et indexée sur `(userName, hashtag)`.
-- **A lost orphan `USER_DELETED` is not replayed.** The reactive binder acknowledges a record when it enters the stream, so a shutdown mid-erasure, or six failures in a row, lose it. The reconciliation repairs a user-requested deletion, but an abandoned registration leaves no tombstone in wely-users, so nothing re-runs its erasure.
+- **A lost orphan `<env>.user-deleted` is not replayed.** The reactive binder acknowledges a record when it enters the stream, so a shutdown mid-erasure, or six failures in a row, lose it. The reconciliation repairs a user-requested deletion, but an abandoned registration leaves no tombstone in wely-users, so nothing re-runs its erasure.
 - **A parked record is never delivered, and the records after it overtake it.** Parking stops one bad record from holding back every later change, at a price: consumers miss that change, and a later record of the same pair goes out before it. On `FRIENDSHIP_STATE` the next change of the pair repairs the state; until then, or if there is none, it stays stale. Nothing re-sends a parked record: fix the cause, then remove the `Parked` label and add `Unpublished` back, or re-run the snapshot.
 - **A long broker outage parks records.** Retriable failures also count towards the 20-attempt limit. With the backoff, the head record is parked after roughly an hour of outage, and each record behind it after about 1 h 35 more. A retriable error is retried in strict version order meanwhile, so an outage still delays every later change until it ends or the record is parked.
 - **Le champ `friendships` de `UserNodeEntity` est toujours vide** : il est mappé sur le type `FRIENDSHIP` alors que toutes les requêtes utilisent `RELATIONSHIP`.
