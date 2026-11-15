@@ -369,6 +369,8 @@ client peut tester et un `timestamp` :
 | `NEO4J_URI` | URI Bolt du serveur Neo4j |
 | `NEO4J_USERNAME` / `NEO4J_PASSWORD` | Identifiants Neo4j |
 | `KAFKA_BOOTSTRAP_SERVER` | Brokers Kafka |
+| `KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT` by default; `SASL_SSL` for Confluent Cloud (dev, prod) |
+| `KAFKA_API_KEY` / `KAFKA_API_SECRET` | The Kafka cluster's API key, for `SASL_SSL` (sealed in `dev-wely-cloud`) |
 | `KAFKA_KEY` / `KAFKA_SECRET` | Identifiants SASL |
 | `ACCOUNT_DELETION_PROTECTED_USER_IDS` | Demo accounts' `businessId`s, comma-separated canonical UUIDs (any other value fails the startup): never counted as a remaining community admin nor promoted. Empty by default |
 | `USERS_API_URL` | In-cluster URL of wely-users, read by the reconciliation (`http://localhost:8082` in the `dev` profile). Empty by default: every pass then fails without a call |
