@@ -19,7 +19,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.data.neo4j.core.ReactiveNeo4jClient;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.testcontainers.containers.Neo4jContainer;
+import org.testcontainers.neo4j.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import reactor.core.publisher.Mono;
@@ -43,7 +43,7 @@ class AccountReconciliationServiceIntegrationTest {
 
     @Container
     @ServiceConnection
-    static final Neo4jContainer<?> NEO4J = new Neo4jContainer<>("neo4j:5.26")
+    static final Neo4jContainer NEO4J = new Neo4jContainer("neo4j:5.26")
             .withAdminPassword("test-password");
 
     static boolean containersRequested() {
