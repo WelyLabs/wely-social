@@ -49,7 +49,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>The chain used to be out of reach because a {@code @SpringBootTest} waited on the Kafka binder;
  * excluding Spring Cloud Stream, as {@code OpenApiConfigTest} does, lets the context start without a
- * broker. Keycloak is replaced by a mocked {@link ReactiveJwtDecoder}: {@value #VALID} decodes, any
+ * broker. The identity provider is replaced by a mocked {@link ReactiveJwtDecoder}: {@value #VALID} decodes, any
  * other token is refused as invalid.
  */
 @SpringBootTest(
@@ -60,9 +60,9 @@ import static org.mockito.Mockito.when;
 @ActiveProfiles("test")
 class WebFluxSecurityConfigTest {
 
-    private static final String PUBLIC_ISSUER = "https://auth.example.test/realms/wely-realm";
-    private static final String INTERNAL_JWKS =
-            "http://wely-auth-service:8080/realms/wely-realm/protocol/openid-connect/certs";
+    private static final String PUBLIC_ISSUER = "https://auth.example.test/";
+    private static final String JWKS =
+            "https://auth.example.test/.well-known/jwks.json";
 
     static final String VALID = "valid-token";
 
@@ -100,20 +100,18 @@ class WebFluxSecurityConfigTest {
         config = new WebFluxSecurityConfig();
         // Both @Value fields are injected by Spring in production.
         ReflectionTestUtils.setField(config, "publicIssuer", PUBLIC_ISSUER);
-        ReflectionTestUtils.setField(config, "internalJwkSetUri", INTERNAL_JWKS);
+        ReflectionTestUtils.setField(config, "internalJwkSetUri", JWKS);
     }
 
     @Test
-    @DisplayName("the decoder reads keys internally while validating the public issuer")
-    void jwtDecoder_shouldBeBuiltOnTheInternalJwks() {
+    @DisplayName("the decoder reads keys from the key set URI while validating the issuer")
+    void jwtDecoder_shouldBeBuiltOnTheJwkSetUri() {
         ReactiveJwtDecoder decoder = config.jwtDecoder();
 
         assertThat(decoder).isInstanceOf(NimbusReactiveJwtDecoder.class);
 
-        // The two URLs are distinct by design. Without that split, either the iss
-        // validation fails — the internal URL does not match the one in the token — or the
-        // service leaves the cluster on every key rotation.
-        assertThat(INTERNAL_JWKS).isNotEqualTo(PUBLIC_ISSUER);
+        // The two URLs are set separately: iss must match the issuer exactly, keys come from the key set URI.
+        assertThat(JWKS).isNotEqualTo(PUBLIC_ISSUER);
     }
 
     @Test
@@ -124,12 +122,12 @@ class WebFluxSecurityConfigTest {
     }
 
     @Test
-    @DisplayName("Keycloak is an external party: the key fetch never carries the request id")
-    void jwtDecoder_shouldNotSendTheRequestIdToKeycloak() throws IOException {
+    @DisplayName("The identity provider is an external party: the key fetch never carries the request id")
+    void jwtDecoder_shouldNotSendTheRequestIdToTheIdentityProvider() throws IOException {
         AtomicReference<Boolean> fetched = new AtomicReference<>(false);
         AtomicReference<String> requestIdHeader = new AtomicReference<>();
-        HttpServer keycloak = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        keycloak.createContext("/", exchange -> {
+        HttpServer identityProvider = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        identityProvider.createContext("/", exchange -> {
             fetched.set(true);
             requestIdHeader.set(exchange.getRequestHeaders().getFirst(RequestIds.REQUEST_ID_HEADER));
             byte[] keys = "{\"keys\":[]}".getBytes(StandardCharsets.UTF_8);
@@ -139,10 +137,10 @@ class WebFluxSecurityConfigTest {
                 out.write(keys);
             }
         });
-        keycloak.start();
+        identityProvider.start();
         try {
             ReflectionTestUtils.setField(config, "internalJwkSetUri",
-                    "http://127.0.0.1:" + keycloak.getAddress().getPort() + "/certs");
+                    "http://127.0.0.1:" + identityProvider.getAddress().getPort() + "/.well-known/jwks.json");
             Base64.Encoder base64 = Base64.getUrlEncoder().withoutPadding();
             String token = base64.encodeToString("{\"alg\":\"RS256\",\"kid\":\"k1\"}".getBytes(StandardCharsets.UTF_8))
                     + "." + base64.encodeToString(("{\"sub\":\"u1\",\"iss\":\"" + PUBLIC_ISSUER + "\"}")
@@ -154,7 +152,7 @@ class WebFluxSecurityConfigTest {
                     .expectError()
                     .verify(Duration.ofSeconds(10));
         } finally {
-            keycloak.stop(0);
+            identityProvider.stop(0);
         }
 
         assertThat(fetched).hasValue(true);

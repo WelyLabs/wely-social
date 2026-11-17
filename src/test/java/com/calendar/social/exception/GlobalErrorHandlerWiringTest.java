@@ -58,7 +58,7 @@ class GlobalErrorHandlerWiringTest {
     @MockitoBean
     private StreamBridge streamBridge;
 
-    // No Keycloak in a unit run: any bearer token decodes to the same caller.
+    // No identity provider in a unit run: any bearer token decodes to the same caller.
     @MockitoBean
     private ReactiveJwtDecoder jwtDecoder;
 

@@ -227,7 +227,7 @@ The whole profile after an edit, applied by the same upsert; it recreates a node
 { "userId": "…", "deletedAt": "2026-10-15T14:03:27.123Z" }
 ```
 
-Sent when a user deletes their account, or when `wely-users` deletes a user left behind by a registration that Keycloak cancelled. Older records have no `deletedAt`: the processing time stands in for it.
+Sent when a user deletes their account, or when `wely-users` deletes a user left behind by a registration that the identity provider cancelled. Older records have no `deletedAt`: the processing time stands in for it.
 
 The erasure (`AccountErasureService`) runs in **one Neo4j transaction**:
 
@@ -380,8 +380,8 @@ client peut tester et un `timestamp` :
 | `FRIENDSHIP_STATE_TOPIC` | Compacted state topic, `FRIENDSHIP_STATE` by default |
 | `FRIENDSHIP_OUTBOX_RELAY_ENABLED` | Runs the `FRIENDSHIP_CHANGED` outbox relay, `true` by default |
 | `FRIENDSHIP_SNAPSHOT_NAME` | Name of the one-time snapshot's marker, `friendship-snapshot-v2` by default; a new value re-runs the snapshot once |
-| `KEYCLOAK_ISSUER_URI` | Issuer public — validation de l'émetteur |
-| `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS interne — récupération des clés |
+| `OIDC_ISSUER_URI` | Émetteur Auth0 : `https://auth.welylabs.app/`, slash final compris |
+| `OIDC_JWK_SET_URI` | Clés de signature : `https://auth.welylabs.app/.well-known/jwks.json` |
 
 ---
 
@@ -395,8 +395,8 @@ client peut tester et un `timestamp` :
 > `wely-gitops-infra` a été supprimé en novembre 2026 avec les bases qu'il déployait : depuis que
 > PostgreSQL, Neo4j, MongoDB, Kafka et le stockage des photos sont des services managés (Neon,
 > Aura, Atlas, Confluent Cloud, Cloudflare R2), un cluster local n'amorcerait qu'une coquille sans
-> rien à interroger. Pour travailler sur ce service, lance Keycloak par le `docker compose` du
-> dépôt de plateforme et donne-lui, par variables d'environnement, les URI de tes propres
+> rien à interroger. Pour travailler sur ce service, lance-le en profil `dev`, qui valide les
+> jetons du tenant Auth0 (`auth.welylabs.app`), et donne-lui, par variables d'environnement, les URI de tes propres
 > instances — les paliers gratuits de ces cinq services suffisent.
 
 ---

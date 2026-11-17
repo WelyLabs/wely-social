@@ -11,7 +11,7 @@ import reactor.core.publisher.Mono;
  * Passes the current request id on to another Wely service, read from the Reactor Context that
  * {@link RequestIdWebFilter} fills. Background calls have none, and go without the header.
  *
- * <p>Only on clients for Wely services: an external party (Keycloak, a storage provider) has no use
+ * <p>Only on clients for Wely services: an external party (Auth0, a storage provider) has no use
  * for it and should not learn it.
  */
 public class RequestIdExchangeFilter implements ExchangeFilterFunction {
